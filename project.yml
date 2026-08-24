@@ -1,0 +1,147 @@
+name: OneBox
+
+options:
+  bundleIdPrefix: com.cmy
+  deploymentTarget:
+    macOS: "15.0"
+  generateEmptyDirectories: false
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+    DEAD_CODE_STRIPPING: true
+
+targets:
+  OneBoxRuntime:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: OneBox/Runtime
+
+  OneBoxDesignSystem:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: OneBox/DesignSystem
+
+  OneBoxHost:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: OneBox/Host
+    dependencies:
+      - target: OneBoxRuntime
+      - target: OneBoxDesignSystem
+
+  OneBoxPlatform:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: OneBox/Platform
+
+  StockWatchTool:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: OneBox/Tools/StockWatch
+    dependencies:
+      - target: OneBoxRuntime
+      - target: OneBoxDesignSystem
+
+  BlogListenTool:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: OneBox/Tools/BlogListen
+    dependencies:
+      - target: OneBoxRuntime
+      - target: OneBoxDesignSystem
+
+  WindowFocusTool:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: OneBox/Tools/WindowFocus
+    dependencies:
+      - target: OneBoxRuntime
+      - target: OneBoxDesignSystem
+
+  OneBox:
+    type: application
+    platform: macOS
+    sources:
+      - path: OneBox/App
+    dependencies:
+      - target: OneBoxRuntime
+      - target: OneBoxDesignSystem
+      - target: OneBoxHost
+      - target: OneBoxPlatform
+      - target: StockWatchTool
+      - target: BlogListenTool
+      - target: WindowFocusTool
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cmy.OneBox
+        PRODUCT_NAME: OneBox
+        GENERATE_INFOPLIST_FILE: true
+        INFOPLIST_KEY_CFBundleDisplayName: OneBox
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+        ENABLE_HARDENED_RUNTIME: true
+
+  OneBoxAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/App
+    dependencies:
+      - target: OneBox
+    settings:
+      base:
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+        PRODUCT_BUNDLE_IDENTIFIER: com.cmy.OneBoxAppTests
+        GENERATE_INFOPLIST_FILE: true
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/OneBox.app/Contents/MacOS/OneBox"
+
+  OneBoxRuntimeTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/Runtime
+    dependencies:
+      - target: OneBoxRuntime
+    settings:
+      base:
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+        PRODUCT_BUNDLE_IDENTIFIER: com.cmy.OneBoxRuntimeTests
+        GENERATE_INFOPLIST_FILE: true
+
+  OneBoxDesignSystemTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/DesignSystem
+    dependencies:
+      - target: OneBoxDesignSystem
+    settings:
+      base:
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+        PRODUCT_BUNDLE_IDENTIFIER: com.cmy.OneBoxDesignSystemTests
+        GENERATE_INFOPLIST_FILE: true
+
+schemes:
+  OneBox:
+    build:
+      targets:
+        OneBox: all
+        OneBoxAppTests: [test]
+        OneBoxRuntimeTests: [test]
+        OneBoxDesignSystemTests: [test]
+    test:
+      gatherCoverageData: true
+      targets:
+        - OneBoxAppTests
+        - OneBoxRuntimeTests
+        - OneBoxDesignSystemTests

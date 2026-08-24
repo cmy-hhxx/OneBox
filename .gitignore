@@ -2,5 +2,21 @@
 .env
 .env.*
 !.env.example
-*.log
+
+# Local build, test, and generated project artifacts
+.build/
+DerivedData/
+OneBox.xcodeproj/
+*.xcresult
+*.profdata
+*.profraw
 coverage/
+TestResults/
+
+# Xcode user state
+*.xcuserstate
+xcuserdata/
+
+# Local runtime and command logs
+*.log
+Logs/

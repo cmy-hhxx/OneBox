@@ -23,7 +23,7 @@ OneBox 的工具由同一个作者开发、编译和发布。目标是复用宿�
 
 ## Decision
 
-OneBox 的内置可信工具使用静态注册的模块化单体。宿主组合根显式绑定工具元数据、激活时机和 factory；不使用 JSON manifest、磁盘扫描或远程代码加载。
+OneBox 的内置可信工具使用静态注册的模块化单体。宿主组合根显式绑定工具身份、展示名称、激活时机和 factory；不使用 JSON manifest、磁盘扫描或远程代码加载。
 
 ## Consequences
 

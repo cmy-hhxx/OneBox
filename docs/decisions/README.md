@@ -4,6 +4,7 @@
 | --- | --- | --- |
 | [ADR-0001](0001-use-static-module-registration.md) | 使用静态模块注册 | Accepted |
 | [ADR-0002](0002-select-desktop-stack.md) | 选择 Swift macOS 技术栈 | Accepted |
+| [ADR-0003](0003-enforce-module-dependencies-with-targets.md) | 用 Xcode target 强制模块依赖 | Accepted |
 
 - `Proposed`：仍在讨论，不是当前约束。
 - `Accepted`：当前实现必须遵守。
