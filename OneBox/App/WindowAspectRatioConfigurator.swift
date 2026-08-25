@@ -1,21 +1,11 @@
 import SwiftUI
 
-public struct WindowAspectRatioConfigurator: NSViewRepresentable {
+struct WindowAspectRatioConfigurator: NSViewRepresentable {
     let aspectRatio: CGSize
     let minimumWindowSize: CGSize
     let forcedWindowSize: CGSize?
 
-    public init(
-        aspectRatio: CGSize,
-        minimumWindowSize: CGSize,
-        forcedWindowSize: CGSize?
-    ) {
-        self.aspectRatio = aspectRatio
-        self.minimumWindowSize = minimumWindowSize
-        self.forcedWindowSize = forcedWindowSize
-    }
-
-    public func makeNSView(context: Context) -> NSView {
+    func makeNSView(context: Context) -> NSView {
         WindowGeometryView(
             aspectRatio: aspectRatio,
             minimumWindowSize: minimumWindowSize,
@@ -23,7 +13,7 @@ public struct WindowAspectRatioConfigurator: NSViewRepresentable {
         )
     }
 
-    public func updateNSView(_ view: NSView, context: Context) {
+    func updateNSView(_ view: NSView, context: Context) {
         guard let view = view as? WindowGeometryView else { return }
 
         view.aspectRatio = aspectRatio

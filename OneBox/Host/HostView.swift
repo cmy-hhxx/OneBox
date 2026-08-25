@@ -81,7 +81,7 @@ extension ToolCatalog {
         ToolRegistration(
             id: ToolID(rawValue: "preview"),
             displayName: "预览工具"
-        ) { _ in
+        ) {
             Text("预览内容")
         }
     ])

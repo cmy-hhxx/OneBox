@@ -1,6 +1,5 @@
 import OneBoxDesignSystem
 import OneBoxHost
-import OneBoxPlatform
 import SwiftUI
 
 @main

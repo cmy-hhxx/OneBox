@@ -28,7 +28,7 @@ OneBox 是一个个人桌面工具箱：多个用途不同的工具共享同一�
 
 `project.yml` 是唯一工程配置源；生成的 Xcode 工程和本地构建产物不进入版本库：
 
-本地验证要求 macOS 15 或更新版本、支持 Swift 6 的 Xcode 16 或更新版本，以及 XcodeGen 2.46。仓库通过 `.mise.toml` 固定 XcodeGen 版本：
+本地验证要求 macOS 15.6 或更新版本、包含 Swift 6.2 的 Xcode 26 或更新版本，以及 XcodeGen 2.46。仓库通过 `.mise.toml` 固定 XcodeGen 版本：
 
 ```sh
 mise trust

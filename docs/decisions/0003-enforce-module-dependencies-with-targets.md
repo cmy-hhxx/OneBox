@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-24
+- Amended by: [ADR-0004](0004-keep-app-specific-platform-code-in-app.md)
 
 ## Context
 

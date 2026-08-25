@@ -1,25 +1,23 @@
 import SwiftUI
 
+@MainActor
 public struct ToolRegistration: Identifiable {
     public let id: ToolID
     public let displayName: String
-    public let activation: ToolActivation
 
-    private let makeContent: (ToolContext) -> AnyView
+    private let makeContent: () -> AnyView
 
     public init<Content: View>(
         id: ToolID,
         displayName: String,
-        activation: ToolActivation = .onOpen,
-        @ViewBuilder content: @escaping (ToolContext) -> Content
+        @ViewBuilder content: @escaping () -> Content
     ) {
         self.id = id
         self.displayName = displayName
-        self.activation = activation
-        self.makeContent = { context in AnyView(content(context)) }
+        self.makeContent = { AnyView(content()) }
     }
 
-    public func content(context: ToolContext) -> AnyView {
-        makeContent(context)
+    public func content() -> AnyView {
+        makeContent()
     }
 }

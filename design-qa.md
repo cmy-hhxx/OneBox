@@ -16,7 +16,10 @@
 
 ## 当前基线
 
-- 范围：浅色宿主、展开与折叠侧边栏、三个占位工具、默认窗口和最小支持窗口。
-- 代码可验证事实：窗口比例、最小尺寸、侧边栏宽度、排版 token 和浅色颜色值均由 Design System 集中定义，其中浅色颜色值由单元测试覆盖。
-- 历史人工检查曾覆盖侧边栏品牌、文字左轴、工具切换和折叠行为，但原始输入与截图只保存在临时目录，未形成可复现仓库证据。
-- 状态：**未验证**。不得继续沿用旧的 `passed` 结论；下一次 UI 变更交付时必须按本文件规则建立新的基线。
+- 日期：2026-08-25。
+- 范围：浅色宿主、展开与折叠侧边栏、三个占位工具、默认窗口、最小支持窗口，以及深色占位结构。
+- 验证步骤：先运行 `./scripts/check.sh`；再从 Xcode 运行 `OneBox` scheme，分别传入 `--ui-default`、`--ui-minimum` 和 `--ui-default --ui-dark`。在默认浅色窗口依次切换三个工具，并折叠、展开侧边栏。
+- 代码验证：窗口比例、最小尺寸、侧边栏宽度、排版 token 和浅色颜色值由 Design System 集中定义；窗口几何和浅色锁定值有单元测试覆盖。
+- 截图：[默认浅色](docs/assets/design-qa/architecture-simplification/default-light.jpeg)、[最小浅色](docs/assets/design-qa/architecture-simplification/minimum-light.jpeg)、[默认暗色占位](docs/assets/design-qa/architecture-simplification/default-dark-placeholder.jpeg)。
+- 结论：默认与最小浅色窗口保持既定比例、224pt 侧栏、共同文字左轴和无系统蓝色的锁定配色；工具切换与侧栏折叠保留正确选中状态；深色只验证了与浅色相同的几何结构。
+- 状态：**通过**。当前工具仍是占位内容，因此数字列、长列表滚动和真实工具内容的视觉验收不适用，待对应功能实现时验证。

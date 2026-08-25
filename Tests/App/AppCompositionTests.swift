@@ -16,10 +16,4 @@ final class AppCompositionTests: XCTestCase {
         )
     }
 
-    @MainActor
-    func testAllInitialToolsActivateOnOpen() {
-        let registrations = AppComposition.makeCatalog().registrations
-
-        XCTAssertTrue(registrations.allSatisfy { $0.activation == .onOpen })
-    }
 }

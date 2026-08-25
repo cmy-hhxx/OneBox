@@ -8,7 +8,7 @@ final class ToolCatalogTests: XCTestCase {
         let registration = ToolRegistration(
             id: ToolID(rawValue: "test-tool"),
             displayName: "Test Tool"
-        ) { _ in
+        ) {
             Text("Test")
         }
         let catalog = ToolCatalog(registrations: [registration])
@@ -21,5 +21,23 @@ final class ToolCatalogTests: XCTestCase {
         let catalog = ToolCatalog(registrations: [])
 
         XCTAssertNil(catalog.registration(for: nil))
+    }
+
+    @MainActor
+    func testContentFactoryRunsLazily() {
+        var constructionCount = 0
+        let registration = ToolRegistration(
+            id: ToolID(rawValue: "test-tool"),
+            displayName: "Test Tool"
+        ) {
+            constructionCount += 1
+            return Text("Test")
+        }
+
+        XCTAssertEqual(constructionCount, 0)
+
+        _ = registration.content()
+
+        XCTAssertEqual(constructionCount, 1)
     }
 }

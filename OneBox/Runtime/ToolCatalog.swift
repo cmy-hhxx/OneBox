@@ -1,3 +1,4 @@
+@MainActor
 public struct ToolCatalog {
     public let registrations: [ToolRegistration]
 
