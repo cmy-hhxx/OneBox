@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import OneBox
 
 final class AppCompositionTests: XCTestCase {
@@ -9,6 +10,7 @@ final class AppCompositionTests: XCTestCase {
         XCTAssertEqual(
             registrations.map(\.id.rawValue),
             [
+                "ascii-art",
                 "stock-watch",
                 "blog-listen",
                 "window-focus",

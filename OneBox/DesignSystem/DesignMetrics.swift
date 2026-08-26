@@ -21,6 +21,7 @@ public enum DesignMetrics {
     public static let sidebarEdgeInset: CGFloat = 12
     public static let sidebarTextInset: CGFloat = 8
     public static let sidebarRowHeight: CGFloat = 36
+    public static let brandMarkSize: CGFloat = 24
     public static let titlebarControlSize: CGFloat = 32
     public static let collapsedToggleLeadingInset: CGFloat = 80
     public static let dataRowHeight: CGFloat = 56

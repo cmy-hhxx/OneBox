@@ -33,4 +33,8 @@
 
 ### Negative
 
-- 首个工具平台 adapter 出现时，需要重新决定实现放置和依赖方向。
+- 每种首次出现的真实平台能力都必须单独决定实现放置和依赖方向，不能直接归入一个通用 Platform target。
+
+## Current application
+
+ASCII 工坊已落实首个窄平台接缝：生产 Metal 设备 adapter 位于 App target，协议位于工具 target，测试使用同一协议的 adapter；没有恢复通用 Platform target。当前结构快照仍以[架构文档](../architecture.md)为准。

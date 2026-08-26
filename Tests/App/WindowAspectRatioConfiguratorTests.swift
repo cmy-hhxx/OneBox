@@ -1,5 +1,6 @@
 import AppKit
 import XCTest
+
 @testable import OneBox
 
 final class WindowAspectRatioConfiguratorTests: XCTestCase {

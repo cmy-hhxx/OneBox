@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import OneBoxDesignSystem
 
 final class LightPaletteTests: XCTestCase {
@@ -13,6 +14,8 @@ final class LightPaletteTests: XCTestCase {
         XCTAssertEqual(LightPaletteHex.textPrimary, 0x1B1C1E)
         XCTAssertEqual(LightPaletteHex.textSecondary, 0x66676A)
         XCTAssertEqual(LightPaletteHex.accent, 0xBC4535)
+        XCTAssertEqual(LightPaletteHex.brandMarkHost, 0x3569CE)
+        XCTAssertEqual(LightPaletteHex.brandMarkCore, 0xFFF1D6)
         XCTAssertEqual(LightPaletteHex.brandGradientStart, 0x3B6FD8)
         XCTAssertEqual(LightPaletteHex.brandGradientMiddle, 0x8A5CBF)
         XCTAssertEqual(LightPaletteHex.brandGradientEnd, 0xBC4535)

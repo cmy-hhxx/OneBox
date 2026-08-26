@@ -8,6 +8,7 @@ options:
 
 settings:
   base:
+    ARCHS: arm64
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
     DEAD_CODE_STRIPPING: true
@@ -79,6 +80,18 @@ targets:
       base:
         SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
 
+  AsciiArtTool:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: OneBox/Tools/AsciiArt
+    dependencies:
+      - target: OneBoxRuntime
+      - target: OneBoxDesignSystem
+    settings:
+      base:
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+
   OneBox:
     type: application
     platform: macOS
@@ -91,10 +104,12 @@ targets:
       - target: StockWatchTool
       - target: BlogListenTool
       - target: WindowFocusTool
+      - target: AsciiArtTool
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cmy.OneBox
         PRODUCT_NAME: OneBox
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: true
         INFOPLIST_KEY_CFBundleDisplayName: OneBox
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
@@ -142,6 +157,21 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.cmy.OneBoxDesignSystemTests
         GENERATE_INFOPLIST_FILE: true
 
+  AsciiArtToolTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/AsciiArt
+    dependencies:
+      - target: AsciiArtTool
+      - target: OneBoxRuntime
+      - target: OneBoxDesignSystem
+    settings:
+      base:
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+        PRODUCT_BUNDLE_IDENTIFIER: com.cmy.AsciiArtToolTests
+        GENERATE_INFOPLIST_FILE: true
+
 schemes:
   OneBox:
     build:
@@ -150,9 +180,20 @@ schemes:
         OneBoxAppTests: [test]
         OneBoxRuntimeTests: [test]
         OneBoxDesignSystemTests: [test]
+        AsciiArtToolTests: [test]
     test:
       gatherCoverageData: true
       targets:
         - OneBoxAppTests
         - OneBoxRuntimeTests
         - OneBoxDesignSystemTests
+        - AsciiArtToolTests
+
+  AsciiArtBenchmark:
+    build:
+      targets:
+        AsciiArtToolTests: [test]
+    test:
+      config: Release
+      targets:
+        - AsciiArtToolTests

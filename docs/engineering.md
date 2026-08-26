@@ -19,7 +19,7 @@
 
 ## 增量交付
 
-- 先在 README 的“下一条业务竖切”中选定一个工具，写清用户结果、真实输入、排除范围、失败状态和完成检查，再实现打开并显示真实结果的最小端到端竖切。
+- 先在 README 的“当前业务竖切”中写清选定工具的用户结果、真实输入、排除范围、失败状态和完成检查，再实现打开并显示真实结果的最小端到端竖切；切换竖切时直接更新该节，不并列维护过期计划。
 - 每一步保持主路径可运行，不先横向铺满所有层。
 - 新结构只在当前竖切需要时出现，不为未完成的复杂度拆掉能运行的路径。
 - 用于消除关键不确定性的 spike 必须明确可丢弃，不能未经决策成为生产基础。
@@ -51,7 +51,7 @@
 - 数据格式变化只验证当前格式并确认旧代码删除，不测试 migration 或 fallback。
 - 不重复运行未受影响且已经通过的检查；未验证事项必须明确说明。
 - UI 变更必须先逐项核对[设计规范](design.md)中的“不可回退的设计决定”，再在默认窗口和最小支持窗口下验证锁定的浅色配色、字体、图标、共同边线和数字列对齐；深色当前只检查占位结构。模板、参考产品或生成代码不能作为突破这些决定的理由。
-- UI 验收过程和比较结论记录在 [design-qa.md](../design-qa.md)。需要长期保留的截图放在仓库相对路径 `docs/assets/design-qa/<change>/`；`.build` 只存放可丢弃的工作产物。验收记录不得引用用户目录或系统临时目录，也不替代 `docs/design.md` 中的设计契约。
+- UI 验收过程和比较结论记录在 [design-qa.md](design-qa.md)。界面截图只作为当次本地检查的临时工作产物，不提交仓库，也不使用截图文件做版本管理；验收结束后必须清理。验收记录不得引用用户目录或系统临时目录，也不替代 `docs/design.md` 中的设计契约。
 
 ### 本地产物目录
 
@@ -59,10 +59,11 @@
 | --- | --- | --- |
 | Xcode 工程 | `OneBox.xcodeproj` | `./scripts/bootstrap.sh` |
 | DerivedData | `.build/DerivedData` | `./scripts/test.sh` |
+| Release 基准 DerivedData | `.build/DerivedData-Release` | `./scripts/benchmark-ascii.sh` |
 | 测试结果 | `.build/TestResults` | `./scripts/test.sh` |
 | 构建与测试日志 | `.build/Logs` | `./scripts/test.sh` |
 
-这些目录都是可再生成的中间产物，必须保持在 `.gitignore` 中。测试源码按被测接口放入 `Tests/<Module>`，并在 `project.yml` 中对应独立 test target；不得用一个可导入整个应用的测试 target 穿透所有模块实现。
+这些目录以及本地打包使用的 `dist/` 都是可再生成产物，必须保持在 `.gitignore` 中。测试源码按被测接口放入 `Tests/<Module>`，并在 `project.yml` 中对应独立 test target；不得用一个可导入整个应用的测试 target 穿透所有模块实现。
 
 提交前运行 `./scripts/check.sh`；它使用仓库根目录的 `.swift-format` 做严格格式检查，再生成工程并执行全部测试。
 

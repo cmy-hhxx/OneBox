@@ -5,6 +5,7 @@
 
 # Local build, test, and generated project artifacts
 .build/
+dist/
 DerivedData/
 OneBox.xcodeproj/
 *.xcresult

@@ -10,6 +10,8 @@ enum LightPaletteHex {
     static let textPrimary: UInt32 = 0x1B1C1E
     static let textSecondary: UInt32 = 0x66676A
     static let accent: UInt32 = 0xBC4535
+    static let brandMarkHost: UInt32 = 0x3569CE
+    static let brandMarkCore: UInt32 = 0xFFF1D6
     static let brandGradientStart: UInt32 = 0x3B6FD8
     static let brandGradientMiddle: UInt32 = 0x8A5CBF
     static let brandGradientEnd: UInt32 = 0xBC4535
@@ -30,6 +32,8 @@ public struct DesignPalette: Sendable {
     public let textPrimary: Color
     public let textSecondary: Color
     public let accent: Color
+    public let brandMarkHost: Color
+    public let brandMarkCore: Color
     public let brandGradientStart: Color
     public let brandGradientMiddle: Color
     public let brandGradientEnd: Color
@@ -49,6 +53,8 @@ public struct DesignPalette: Sendable {
         textPrimary: Color(hex: LightPaletteHex.textPrimary),
         textSecondary: Color(hex: LightPaletteHex.textSecondary),
         accent: Color(hex: LightPaletteHex.accent),
+        brandMarkHost: Color(hex: LightPaletteHex.brandMarkHost),
+        brandMarkCore: Color(hex: LightPaletteHex.brandMarkCore),
         brandGradientStart: Color(hex: LightPaletteHex.brandGradientStart),
         brandGradientMiddle: Color(hex: LightPaletteHex.brandGradientMiddle),
         brandGradientEnd: Color(hex: LightPaletteHex.brandGradientEnd),
@@ -69,6 +75,8 @@ public struct DesignPalette: Sendable {
         textPrimary: Color(hex: 0xF4F4F6),
         textSecondary: Color(hex: 0x9C9C9D),
         accent: Color(hex: 0xFF6161),
+        brandMarkHost: Color(hex: 0x5E82D8),
+        brandMarkCore: Color(hex: 0xE8DBC4),
         brandGradientStart: Color(hex: 0x6EA8FE),
         brandGradientMiddle: Color(hex: 0xB197FC),
         brandGradientEnd: Color(hex: 0xFF8787),

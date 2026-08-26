@@ -26,7 +26,7 @@ OneBox 已按 App、Host、Runtime、DesignSystem、Platform 和工具划分目�
 
 ## Decision
 
-App、Host、Runtime、DesignSystem、Platform 和每个工具分别使用独立静态库或应用 target。只有 `OneBox` 应用 target 依赖具体工具；工具只依赖 Runtime 与 DesignSystem；Host 只依赖 Runtime 与 DesignSystem。
+本 ADR 接受时，App、Host、Runtime、DesignSystem、Platform 和每个工具分别使用独立静态库或应用 target。只有 `OneBox` 应用 target 依赖具体工具；工具只依赖 Runtime 与 DesignSystem；Host 只依赖 Runtime 与 DesignSystem。随后 [ADR-0004](0004-keep-app-specific-platform-code-in-app.md) 删除了没有形成有效接缝的 Platform target；其余 target 边界保持不变。
 
 测试按被测接口拆成独立 test target。`project.yml` 是工程配置唯一真相源，生成的 `OneBox.xcodeproj` 不进入版本库。
 

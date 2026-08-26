@@ -5,25 +5,14 @@ struct OneBoxBrandTitle: View {
     @Environment(\.designPalette) private var palette
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 0) {
-            Text("One")
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [
-                            palette.brandGradientStart,
-                            palette.brandGradientMiddle,
-                            palette.brandGradientEnd,
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
+        HStack(spacing: DesignMetrics.space8) {
+            OneBoxBrandMark()
 
-            Text("Box")
+            Text("OneBox")
+                .font(DesignTypography.sidebarTitle)
                 .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
         }
-        .font(DesignTypography.sidebarTitle)
-        .lineLimit(1)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("OneBox")
         .accessibilityAddTraits(.isHeader)
