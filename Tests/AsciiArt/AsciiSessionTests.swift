@@ -57,14 +57,12 @@ struct AsciiSessionTests {
     }
 
     @Test
-    func `first successful import opens inspector only once`() {
+    func `parameters start visible and keep the user's collapsed state`() {
         let session = AsciiSession()
 
-        session.noteSuccessfulImport()
         #expect(session.isInspectorPresented)
 
         session.isInspectorPresented = false
-        session.noteSuccessfulImport()
         #expect(!session.isInspectorPresented)
     }
 

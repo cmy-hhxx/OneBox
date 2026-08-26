@@ -2,44 +2,39 @@ import OneBoxDesignSystem
 import SwiftUI
 
 @MainActor
-struct AsciiCanvasStage: View {
+struct AsciiCanvasView: View {
     @Bindable var session: AsciiSession
     let renderCache: AsciiRenderCache
 
     @Environment(\.designPalette) private var palette
     @State private var isDropTargeted = false
+    @FocusState private var isCanvasFocused: Bool
 
     var body: some View {
         ZStack {
-            palette.surfaceElevated
-
             canvasSurface
                 .aspectRatio(session.settings.canvasPreset.outputSize, contentMode: .fit)
-                .padding(DesignMetrics.space12)
+                .overlay(alignment: .top) {
+                    if let statusMessage = session.statusMessage {
+                        AsciiStatusBanner(message: statusMessage)
+                            .padding(DesignMetrics.space12)
+                    }
+                }
+                .overlay {
+                    if isDropTargeted {
+                        Text("释放以导入")
+                            .font(DesignTypography.sectionTitle)
+                            .foregroundStyle(palette.textPrimary)
+                            .padding(.horizontal, DesignMetrics.space16)
+                            .frame(minHeight: 36)
+                            .background(palette.surface)
+                            .clipShape(.rect(cornerRadius: DesignMetrics.cornerRadius))
+                            .accessibilityHidden(true)
+                    }
+                }
         }
-        .clipShape(.rect(cornerRadius: DesignMetrics.cornerRadius))
-        .overlay {
-            RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius)
-                .stroke(isDropTargeted ? palette.accent : palette.border, lineWidth: 1)
-        }
-        .overlay(alignment: .top) {
-            if let statusMessage = session.statusMessage {
-                AsciiStatusBanner(message: statusMessage)
-                    .padding(DesignMetrics.space12)
-            }
-        }
-        .overlay {
-            if isDropTargeted {
-                Text("释放以导入")
-                    .font(DesignTypography.sectionTitle)
-                    .foregroundStyle(palette.textPrimary)
-                    .padding(.horizontal, DesignMetrics.space16)
-                    .frame(minHeight: 36)
-                    .background(palette.surface)
-                    .clipShape(.rect(cornerRadius: DesignMetrics.cornerRadius))
-                    .accessibilityHidden(true)
-            }
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(.rect)
         .dropDestination(for: URL.self, action: acceptDrop, isTargeted: dropTargetChanged)
         .accessibilityAction(named: "重置视图") { session.transform.reset() }
         .accessibilityAction(named: "放大画布") { session.transform.zoom(by: 1.2) }
@@ -64,6 +59,8 @@ struct AsciiCanvasStage: View {
                 onReadinessChanged: session.setMetalReady
             )
             .focusable()
+            .focused($isCanvasFocused)
+            .focusEffectDisabled()
             .onKeyPress(.leftArrow) {
                 panByKeyboard(horizontal: -1, vertical: 0)
             }
@@ -113,7 +110,10 @@ struct AsciiCanvasStage: View {
         .clipShape(.rect(cornerRadius: DesignMetrics.cornerRadius))
         .overlay {
             RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius)
-                .stroke(palette.border, lineWidth: 1)
+                .stroke(
+                    isDropTargeted || isCanvasFocused ? palette.accent : palette.border,
+                    lineWidth: 1
+                )
         }
     }
 
@@ -121,8 +121,8 @@ struct AsciiCanvasStage: View {
         session.transform.pan(by: delta, in: viewport)
     }
 
-    private func zoom(_ factor: Double) {
-        session.transform.zoom(by: factor)
+    private func zoom(_ factor: Double, _ anchor: CGPoint, _ viewport: CGSize) {
+        session.transform.zoom(by: factor, around: anchor, in: viewport)
     }
 
     private func panByKeyboard(horizontal: Double, vertical: Double) -> KeyPress.Result {

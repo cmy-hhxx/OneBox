@@ -8,13 +8,8 @@ struct ToolDetailView: View {
     @Environment(\.designPalette) private var palette
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.space24) {
+        Group {
             if let registration {
-                Text(registration.displayName)
-                    .font(DesignTypography.screenTitle)
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
-
                 registration.content()
                     .frame(
                         maxWidth: .infinity,
@@ -24,7 +19,7 @@ struct ToolDetailView: View {
             }
         }
         .padding(.horizontal, DesignMetrics.mainInset)
-        .padding(.top, DesignMetrics.space48)
+        .padding(.top, DesignMetrics.space24)
         .padding(.bottom, DesignMetrics.space24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(palette.background)

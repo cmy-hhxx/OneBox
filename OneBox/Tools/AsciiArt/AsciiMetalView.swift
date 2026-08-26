@@ -9,7 +9,7 @@ struct AsciiMetalView: NSViewRepresentable {
     let snapshot: AsciiRenderSnapshot?
     let isAnimating: Bool
     let onPan: (CGSize, CGSize) -> Void
-    let onZoom: (Double) -> Void
+    let onZoom: (Double, CGPoint, CGSize) -> Void
     let onReset: () -> Void
     let onReadinessChanged: (Bool) -> Void
 

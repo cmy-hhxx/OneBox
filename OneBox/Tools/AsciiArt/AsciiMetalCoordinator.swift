@@ -16,6 +16,7 @@ final class AsciiMetalCoordinator: NSObject, MTKViewDelegate {
     private var preparationTask: Task<Void, Never>?
     private var preparationFailed = false
     private var drawingFailed = false
+    private var reportedReadiness: Bool?
     private var animationStartTime = ProcessInfo.processInfo.systemUptime
 
     init(cache: AsciiRenderCache, onReadinessChanged: @escaping (Bool) -> Void) {
@@ -42,11 +43,11 @@ final class AsciiMetalCoordinator: NSObject, MTKViewDelegate {
             }
             do {
                 try updateTexturesIfNeeded(source: source, sourceRevision: sourceRevision)
-                onReadinessChanged(true)
+                reportReadiness(true)
                 requestStaticDrawIfNeeded(view: view, isAnimating: isAnimating)
             } catch {
                 pauseDrawing(view: view)
-                onReadinessChanged(false)
+                reportReadiness(false)
             }
             return
         }
@@ -67,14 +68,14 @@ final class AsciiMetalCoordinator: NSObject, MTKViewDelegate {
                     source: pendingSource,
                     sourceRevision: pendingSourceRevision
                 )
-                onReadinessChanged(true)
+                reportReadiness(true)
                 requestStaticDrawIfNeeded(view: view, isAnimating: !view.isPaused)
             } catch is CancellationError {
                 return
             } catch {
                 preparationFailed = self.pipeline == nil
                 pauseDrawing(view: view)
-                onReadinessChanged(false)
+                reportReadiness(false)
             }
             preparationTask = nil
         }
@@ -86,6 +87,7 @@ final class AsciiMetalCoordinator: NSObject, MTKViewDelegate {
         preparationTask = nil
         preparationFailed = false
         drawingFailed = false
+        reportedReadiness = nil
         sourceTexture = nil
         glyphTexture = nil
         snapshot = nil
@@ -125,7 +127,7 @@ final class AsciiMetalCoordinator: NSObject, MTKViewDelegate {
         } catch {
             drawingFailed = true
             pauseDrawing(view: view)
-            onReadinessChanged(false)
+            reportReadiness(false)
         }
     }
 
@@ -168,5 +170,11 @@ final class AsciiMetalCoordinator: NSObject, MTKViewDelegate {
     private func pauseDrawing(view: MTKView) {
         view.isPaused = true
         view.enableSetNeedsDisplay = true
+    }
+
+    private func reportReadiness(_ isReady: Bool) {
+        guard reportedReadiness != isReady else { return }
+        reportedReadiness = isReady
+        onReadinessChanged(isReady)
     }
 }

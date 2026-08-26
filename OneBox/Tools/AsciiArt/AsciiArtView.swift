@@ -28,13 +28,13 @@ struct AsciiArtView: View {
                 export: beginExport
             )
 
-            ZStack(alignment: .trailing) {
-                AsciiCanvasStage(session: session, renderCache: renderCache)
+            HStack(spacing: DesignMetrics.space12) {
+                AsciiCanvasView(session: session, renderCache: renderCache)
 
                 if session.isInspectorPresented {
                     AsciiInspector(session: session, close: closeInspector)
-                        .padding(DesignMetrics.space12)
-                        .transition(.opacity)
+                        .frame(width: 248)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
         }

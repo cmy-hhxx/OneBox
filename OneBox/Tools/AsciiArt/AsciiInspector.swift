@@ -34,15 +34,13 @@ struct AsciiInspector: View {
             .scrollIndicators(.hidden)
         }
         .padding(DesignMetrics.space16)
-        .frame(width: 288)
-        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(palette.surface)
         .clipShape(.rect(cornerRadius: DesignMetrics.cornerRadius))
         .overlay {
             RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius)
                 .stroke(palette.border, lineWidth: 1)
         }
-        .accessibilityAddTraits(.isModal)
         .accessibilityAction(.escape, close)
     }
 

@@ -6,7 +6,7 @@ import Observation
 final class AsciiSession {
     var settings = AsciiSettings()
     var transform = CanvasTransform()
-    var isInspectorPresented = false
+    var isInspectorPresented = true
     private(set) var source: AsciiSource?
     private(set) var sourceRevision = 0
     private(set) var isImporting = false
@@ -17,7 +17,6 @@ final class AsciiSession {
     private var reduceMotion = false
     private var wantsPlayback = true
     private var manuallyEnabledWithReduceMotion = false
-    private var hasImported = false
     private var importGeneration = 0
     private var operationError: AsciiToolError?
     private var isMetalUnavailable = false
@@ -88,12 +87,6 @@ final class AsciiSession {
         }
     }
 
-    func noteSuccessfulImport() {
-        guard !hasImported else { return }
-        hasImported = true
-        isInspectorPresented = true
-    }
-
     func prepareInitialSource() {
         guard source == nil else { return }
         do {
@@ -131,7 +124,6 @@ final class AsciiSession {
                 )
                 sourceRevision += 1
                 isImporting = false
-                noteSuccessfulImport()
             } catch is CancellationError {
                 guard let self, generation == self.importGeneration else { return }
                 isImporting = false
