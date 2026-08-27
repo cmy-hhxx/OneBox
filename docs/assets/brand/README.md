@@ -1,6 +1,6 @@
 # OneBox 品牌资产
 
-`onebox-mark-light.png` 是当前 AppIcon 的 master。`onebox-mark-dark.png` 由生成脚本同时校验，但当前产品不使用深色 AppIcon。
+`onebox-mark-light.png` 是当前 AppIcon 的 master，也是 ASCII 工坊的默认素材。应用和 ASCII 测试直接打包该实体文件；`onebox-mark-dark.png` 由生成脚本同时校验，但当前产品不使用深色 AppIcon。
 
 更新 master 后，从仓库根目录生成十个 AppIcon 槽位：
 

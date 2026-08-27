@@ -97,6 +97,8 @@ targets:
     platform: macOS
     sources:
       - path: OneBox/App
+      - path: docs/assets/brand/onebox-mark-light.png
+        buildPhase: resources
     dependencies:
       - target: OneBoxRuntime
       - target: OneBoxDesignSystem
@@ -162,6 +164,8 @@ targets:
     platform: macOS
     sources:
       - path: Tests/AsciiArt
+      - path: docs/assets/brand/onebox-mark-light.png
+        buildPhase: resources
     dependencies:
       - target: AsciiArtTool
       - target: OneBoxRuntime

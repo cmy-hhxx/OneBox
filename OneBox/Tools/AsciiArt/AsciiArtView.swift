@@ -18,7 +18,7 @@ struct AsciiArtView: View {
     @AccessibilityFocusState private var isParameterButtonFocused: Bool
 
     var body: some View {
-        VStack(spacing: DesignMetrics.space12) {
+        VStack(spacing: DesignMetrics.space8) {
             AsciiToolbar(
                 session: session,
                 isExporting: isExporting,

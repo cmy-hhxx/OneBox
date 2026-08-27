@@ -93,7 +93,7 @@ struct AsciiCanvasView: View {
             .accessibilityHint("方向键平移；加号或减号缩放；空格播放或暂停；数字零重置")
 
             if !session.isMetalReady || session.source == nil {
-                AsciiBrandPlaceholder()
+                AsciiBrandPlaceholder(image: session.source?.image)
                     .accessibilityHidden(true)
             }
 

@@ -19,7 +19,7 @@ struct ToolDetailView: View {
             }
         }
         .padding(.horizontal, DesignMetrics.mainInset)
-        .padding(.top, DesignMetrics.space24)
+        .padding(.top, DesignMetrics.space8)
         .padding(.bottom, DesignMetrics.space24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(palette.background)

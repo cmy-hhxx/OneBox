@@ -67,6 +67,17 @@ struct AsciiSessionTests {
     }
 
     @Test
+    func `initial source uses the bundled light brand master`() throws {
+        let session = AsciiSession()
+
+        session.prepareInitialSource()
+
+        let image = try #require(session.source?.image)
+        #expect(image.width == 1254)
+        #expect(image.height == 1254)
+    }
+
+    @Test
     func `failed import keeps the last valid source`() async throws {
         let session = AsciiSession()
         session.prepareInitialSource()

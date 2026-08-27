@@ -102,11 +102,8 @@ struct AsciiInspector: View {
 
     private var animationControls: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.space12) {
-            Picker("动画", selection: $session.selectedAnimation) {
-                ForEach(AsciiAnimation.allCases) { animation in
-                    Text(animation.rawValue).tag(animation)
-                }
-            }
+            Text("动画")
+                .font(DesignTypography.sectionTitle)
 
             AsciiSliderRow(
                 title: "动画强度",

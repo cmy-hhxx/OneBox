@@ -51,6 +51,7 @@ struct AsciiMetalView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ view: InteractiveMTKView, coordinator: AsciiMetalCoordinator) {
+        view.cancelInteraction()
         coordinator.stop(view: view)
         view.delegate = nil
         view.onPan = nil

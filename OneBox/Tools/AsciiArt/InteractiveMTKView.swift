@@ -6,45 +6,74 @@ final class InteractiveMTKView: MTKView {
     var onZoom: ((Double, CGPoint, CGSize) -> Void)?
     var onReset: (() -> Void)?
 
-    private var lastDragLocation: CGPoint?
+    private var isInfiniteDragActive = false
 
     override var acceptsFirstResponder: Bool { true }
     override var isOpaque: Bool { false }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        lastDragLocation = convert(event.locationInWindow, from: nil)
         if event.clickCount == 2 {
             onReset?()
         }
     }
 
     override func mouseDragged(with event: NSEvent) {
-        let location = convert(event.locationInWindow, from: nil)
-        guard let lastDragLocation else {
-            self.lastDragLocation = location
-            return
-        }
-        let delta = Self.canvasDragDelta(
-            from: lastDragLocation,
-            to: location
+        beginInfiniteDragIfPossible()
+        onPan?(
+            Self.canvasDragDelta(deltaX: event.deltaX, deltaY: event.deltaY),
+            bounds.size
         )
-        self.lastDragLocation = location
-        onPan?(delta, bounds.size)
     }
 
     override func mouseUp(with event: NSEvent) {
-        lastDragLocation = nil
+        cancelInteraction()
     }
 
-    nonisolated static func canvasDragDelta(
-        from previousLocation: CGPoint,
-        to currentLocation: CGPoint
-    ) -> CGSize {
-        CGSize(
-            width: currentLocation.x - previousLocation.x,
-            height: previousLocation.y - currentLocation.y
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window else { return }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(cancelInteractionForNotification),
+            name: NSWindow.didResignKeyNotification,
+            object: window
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(cancelInteractionForNotification),
+            name: NSApplication.didResignActiveNotification,
+            object: nil
+        )
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        NotificationCenter.default.removeObserver(self)
+        cancelInteraction()
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    nonisolated static func canvasDragDelta(deltaX: CGFloat, deltaY: CGFloat) -> CGSize {
+        CGSize(width: deltaX, height: deltaY)
+    }
+
+    func cancelInteraction() {
+        guard isInfiniteDragActive else { return }
+        CGAssociateMouseAndMouseCursorPosition(1)
+        NSCursor.unhide()
+        isInfiniteDragActive = false
+    }
+
+    private func beginInfiniteDragIfPossible() {
+        guard !isInfiniteDragActive,
+            CGAssociateMouseAndMouseCursorPosition(0) == .success
+        else { return }
+        NSCursor.hide()
+        isInfiniteDragActive = true
+    }
+
+    @objc private func cancelInteractionForNotification(_ notification: Notification) {
+        cancelInteraction()
     }
 
     override func scrollWheel(with event: NSEvent) {

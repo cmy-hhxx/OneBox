@@ -30,13 +30,25 @@ struct CanvasTransformTests {
     }
 
     @Test
-    func `AppKit drag deltas follow pointer movement in canvas coordinates`() {
-        let delta = InteractiveMTKView.canvasDragDelta(
-            from: CGPoint(x: 100, y: 100),
-            to: CGPoint(x: 124, y: 112)
-        )
+    func `captured drag maps device movement to the expected canvas direction`() {
+        let delta = InteractiveMTKView.canvasDragDelta(deltaX: 24, deltaY: 12)
 
-        #expect(delta == CGSize(width: 24, height: -12))
+        #expect(delta == CGSize(width: 24, height: 12))
+    }
+
+    @Test
+    func `repeated relative drags keep panning without an offset boundary`() {
+        var transform = CanvasTransform()
+
+        for _ in 0..<100 {
+            transform.pan(
+                by: InteractiveMTKView.canvasDragDelta(deltaX: 80, deltaY: -40),
+                in: CGSize(width: 400, height: 200)
+            )
+        }
+
+        #expect(abs(transform.offset.x - 20) < 0.000_001)
+        #expect(abs(transform.offset.y + 20) < 0.000_001)
     }
 
     @Test
