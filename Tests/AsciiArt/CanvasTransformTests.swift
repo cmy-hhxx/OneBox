@@ -72,44 +72,15 @@ struct CanvasTransformTests {
     }
 
     @Test
-    func `pointer anchored zoom keeps the source point under the pointer`() {
+    func `pointer anchored zoom moves the canvas center around the pointer`() {
         var transform = CanvasTransform(scale: 1.2, offset: CGPoint(x: 0.1, y: -0.08))
         let viewport = CGSize(width: 400, height: 200)
         let anchor = CGPoint(x: 300, y: 50)
-        let normalizedAnchor = CGPoint(x: anchor.x / viewport.width, y: anchor.y / viewport.height)
-        let sourceSize = CGSize(width: 1600, height: 900)
-        let canvasSize = CGSize(width: 1920, height: 1080)
-        let sourceBeforeZoom = transform.sourceCoordinate(
-            for: normalizedAnchor,
-            sourceSize: sourceSize,
-            canvasSize: canvasSize
-        )
 
         transform.zoom(by: 1.4, around: anchor, in: viewport)
 
-        let sourceAfterZoom = transform.sourceCoordinate(
-            for: normalizedAnchor,
-            sourceSize: sourceSize,
-            canvasSize: canvasSize
-        )
-        #expect(abs(sourceBeforeZoom.x - sourceAfterZoom.x) < 0.000_001)
-        #expect(abs(sourceBeforeZoom.y - sourceAfterZoom.y) < 0.000_001)
-    }
-
-    @Test
-    func `preview and export map the same normalized composition`() {
-        let transform = CanvasTransform(scale: 1.5, offset: CGPoint(x: 0.1, y: -0.15))
-        let preview = transform.sourceCoordinate(
-            for: CGPoint(x: 0.4, y: 0.65),
-            sourceSize: CGSize(width: 1600, height: 900),
-            canvasSize: CGSize(width: 1920, height: 1080)
-        )
-        let export = transform.sourceCoordinate(
-            for: CGPoint(x: 0.4, y: 0.65),
-            sourceSize: CGSize(width: 1600, height: 900),
-            canvasSize: CGSize(width: 1920, height: 1080)
-        )
-
-        #expect(preview == export)
+        #expect(abs(transform.scale - 1.68) < 0.000_001)
+        #expect(abs(transform.offset.x - 0.04) < 0.000_001)
+        #expect(abs(transform.offset.y - -0.012) < 0.000_001)
     }
 }

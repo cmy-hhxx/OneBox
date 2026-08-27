@@ -43,7 +43,7 @@ nonisolated enum AsciiImageDecoder {
                     try decodeRaster(data)
                 }
             try Task.checkCancellation()
-            return DecodedAsciiImage(cgImage: image, sourceName: url.lastPathComponent)
+            return DecodedAsciiImage(cgImage: image)
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as AsciiToolError {

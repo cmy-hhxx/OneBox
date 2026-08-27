@@ -1,104 +1,34 @@
 # 架构
 
-OneBox 对内置可信工具采用模块化单体和静态注册。该决定记录在
-[ADR-0001](decisions/0001-use-static-module-registration.md)。所有 target 最终静态链接到同一个
-macOS 应用，因此 target 边界提供编译期依赖隔离，不提供安全沙箱、进程崩溃隔离或恶意代码防护。
+OneBox 是静态注册的模块化单体，见 [ADR-0001](decisions/0001-use-static-module-registration.md)。独立 Xcode target 强制编译依赖，但所有模块仍在同一进程中，不构成安全或崩溃隔离。
 
-## 当前实现
+## 模块
 
-| 能力 | 当前状态 |
-| --- | --- |
-| 宿主 | 已实现窗口、侧边栏、工具切换、外观感知的 OneBox“套盒”品牌标识和统一占位内容 |
-| 注册 | 已实现类型安全的 `ToolRegistration`、唯一 ID 检查和组合根静态注册 |
-| 模块边界 | 已通过独立 Xcode target 强制，见 [ADR-0003](decisions/0003-enforce-module-dependencies-with-targets.md) |
-| Design System | 已实现宿主当前使用的颜色、字体、间距和占位状态 |
-| 平台桥接 | 窗口级 AppKit 实现在 App target；ASCII 工坊的 Metal 设备由 App adapter 注入，工具内部使用 AppKit/MetalKit 完成 SVG 与画布实现 |
-| 工具业务 | ASCII 工坊已接入；股票看盘、博客收听和窗口聚焦仍显示“待接入” |
-| 激活与生命周期 | ASCII 工坊用 SwiftUI 可见性、`scenePhase` 和播放状态暂停渲染，并在视图关闭时取消导入/导出；没有随应用启动的后台调度 |
-| 数据、权限与日志 | 尚无业务存储、权限请求或运行时日志实现 |
+| Target | 源目录 | 职责 | 项目内依赖 |
+| --- | --- | --- | --- |
+| `OneBox` | `OneBox/App` | 应用生命周期、窗口、组合根和生产 adapter | Host、Runtime、DesignSystem、全部 Tool |
+| `OneBoxHost` | `OneBox/Host` | 侧边栏、选择和内容区域 | Runtime、DesignSystem |
+| `OneBoxRuntime` | `OneBox/Runtime` | 工具 ID、注册值和目录 | 无 |
+| `OneBoxDesignSystem` | `OneBox/DesignSystem` | 颜色、字体、几何和占位视图 | 无 |
+| `*Tool` | `OneBox/Tools/<Tool>` | 工具入口、业务状态和实现 | Runtime、DesignSystem |
 
-这张表是当前实现的可读快照，事实仍以代码、测试和 `project.yml` 为准。后文中的模块契约描述新增真实业务时必须满足的边界，不表示对应能力已经落地；实现变化必须在同一变更中更新本表。
+依赖方向由 `project.yml` 定义，具体边界见 [ADR-0003](decisions/0003-enforce-module-dependencies-with-targets.md) 和 [ADR-0004](decisions/0004-keep-app-specific-platform-code-in-app.md)。
 
-## 技术栈
+## 边界
 
-- 平台：Apple Silicon、macOS 15+，见 [ADR-0006](decisions/0006-require-apple-silicon.md)。
-- 产品代码：Swift。
-- UI 与应用生命周期：SwiftUI。
-- 窗口控制、辅助功能及 SwiftUI 未覆盖的系统能力：从 Swift 调用 AppKit。
-- 图片：ImageIO 解码 PNG/JPEG；AppKit 将尺寸先限制到最长边 4096px，再把 SVG 栅格化为 `CGImage`。
-- GPU：App target 提供默认 Metal 设备 adapter；ASCII 工坊拥有 pipeline、纹理、预览和离屏导出。
-- 基础系统能力：Foundation。
-- 构建与依赖：Xcode 和 Swift Package Manager。
+- `OneBox/App/AppComposition.swift` 是唯一注册具体工具的组合根。
+- 工具不得导入其他工具、Host 或 App。
+- 无依赖工具可以公开静态 registration；有依赖工具公开窄 factory，由组合根注入平台能力或配置。
+- 跨模块接口由使用方定义。工具不得查找宿主、全局容器或系统默认实现。
+- 共享代码只在出现第二个真实消费者后提取。
 
-不引入 TypeScript、JavaScript、Rust 或第二套应用运行时。新功能默认使用简单 SwiftUI MV；只有真实状态复杂度证明需要时才增加 MVVM、MVI、TCA 等架构层。
+ASCII 工坊通过 `AsciiArtModule.makeRegistration(deviceProvider:)` 接收 `AsciiMetalDeviceProviding`。App 只提供 Metal 设备；解码、会话、渲染和导出留在工具内部。
 
-## 当前编译依赖
+## 当前运行状态
 
-下图只表达 `project.yml` 中由编译器执行的 target 依赖，不表达用户操作流或未来运行时调度：
+- 宿主启动时选择第一个 registration，因此 ASCII 工坊默认打开；其他工具在被选择前不构造内容。
+- ASCII 工坊在注册时创建内存会话和惰性渲染缓存，不请求设备或执行 I/O。隐藏、窗口失活或暂停时停止持续绘制，关闭视图时取消导入和导出。
+- 股票看盘、博客收听和窗口聚焦仅显示“待接入”。
+- 当前没有业务持久化、权限请求、后台调度或运行时日志。
 
-```mermaid
-flowchart LR
-    App[OneBox App] --> Host[OneBoxHost]
-    App --> Runtime[OneBoxRuntime]
-    App --> Design[OneBoxDesignSystem]
-    App --> Tools[Concrete Tool Targets]
-    Host --> Runtime
-    Host --> Design
-    Tools --> Runtime
-    Tools --> Design
-```
-
-`OneBoxRuntime` 和 `OneBoxDesignSystem` 当前没有项目内依赖。没有源码和 target 的能力不进入依赖图。
-
-## 当前职责
-
-| 模块 | 当前拥有 |
-| --- | --- |
-| App | 应用生命周期、窗口创建、窗口级 AppKit 桥接、组合根、具体工具注册和生产平台 adapter |
-| Host | 侧边栏、导航和内容区域 |
-| Runtime | 工具身份、注册值和注册目录 |
-| Tool | 单个工具的内容入口和领域状态；ASCII 工坊内部拥有内存会话、解码和 Metal 渲染 |
-| Design System | [设计规范](design.md)定义的视觉 token、排版、几何和占位状态 |
-
-权限提示、统一错误呈现、业务状态、数据、任务回收和结构化日志在真实需求出现前不预建空层。
-
-## 依赖规则
-
-```text
-app -> host, runtime, design system, concrete tool modules
-host -> runtime, design system
-tool module -> runtime, design system
-runtime, design system -> no project target
-```
-
-- 工具模块不得导入另一个工具模块、`OneBoxHost` 或应用 target。
-- `OneBox/App/AppComposition.swift` 是唯一导入并注册全部具体工具的组合根。
-- 无依赖工具可以公开静态注册值；出现真实依赖后，由应用组合根调用工具的窄 factory 注入，工具不访问全局依赖容器。
-- 工具需要跨模块平台能力时，由应用组合根通过窄接口注入；ASCII 工坊当前通过 `AsciiMetalDeviceProviding` 接收 Metal 设备，工具不得直接查找宿主或系统默认设备。
-- 共享代码只有在第二个真实消费者出现后才提取。
-- 新增依赖必须先满足上述方向，再写入 `project.yml`；不得通过把源码加入多个 target 绕过依赖规则。
-
-## 物理结构
-
-| Target | 源目录 | 允许的项目内依赖 |
-| --- | --- | --- |
-| `OneBox` | `OneBox/App` | Host、Runtime、DesignSystem 和全部具体工具 |
-| `OneBoxHost` | `OneBox/Host` | Runtime、DesignSystem |
-| `OneBoxRuntime` | `OneBox/Runtime` | 无 |
-| `OneBoxDesignSystem` | `OneBox/DesignSystem` | 无 |
-| `*Tool` | `OneBox/Tools/<Tool>` | Runtime、DesignSystem |
-
-ASCII 工坊以一个深模块隐藏输入解码、字符 atlas、Metal pipeline 和导出实现。跨 target 接缝只有 `AsciiArtModule.makeRegistration(deviceProvider:)` 和它接收的 `AsciiMetalDeviceProviding`；App 只提供设备，宿主不知道会话、渲染或文件格式细节。
-
-## 业务契约
-
-ASCII 工坊已经落实 `onOpen`、可见性暂停、任务取消和分类错误；后续真实工具仍必须满足并验证：
-
-- `onOpen` 工具只在用户打开时产生业务 I/O；首个需要随应用启动的工具落地时，必须同时引入激活类型、宿主调度和测试。
-- 同一工具重复打开不得重复注册全局监听器；关闭后必须停止它拥有的任务、定时器和订阅。
-- 每个工具拥有独立业务状态和存储命名空间，宿主不解析工具数据。
-- 工具内用户操作错误由工具转换为可分类结果并在内容区呈现；只有跨越注册接缝的错误才交给宿主标准状态页。
-- 操作系统权限通过注入的平台接口请求和使用。
-- 第一个真实运行时诊断需求出现时，按[工程规范](engineering.md#运行时诊断)实现最小入口并更新当前实现表，不预建日志架构。
-
-这些条目是验收条件，不是当前 Runtime 已经提供的机制。进程隔离只有在真实阻塞、崩溃、不受信任代码或不同运行时需求出现后才重新决策。
+工具接入规则见 [工具模块契约](module-contract.md)；当前事实仍以源码、测试和 `project.yml` 为准。

@@ -70,14 +70,14 @@ struct AsciiSessionTests {
     func `failed import keeps the last valid source`() async throws {
         let session = AsciiSession()
         session.prepareInitialSource()
-        let originalName = session.source?.name
+        let originalImage = try #require(session.source?.image)
         let url = try temporaryFile(name: "broken.png", data: Data("broken".utf8))
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
         session.importImage(from: url)
         await waitForImport(session)
 
-        #expect(session.source?.name == originalName)
+        #expect(session.source?.image === originalImage)
         #expect(session.statusMessage == AsciiToolError.decodeFailed.actionMessage)
     }
 
@@ -97,7 +97,8 @@ struct AsciiSessionTests {
         session.importImage(from: second)
         await waitForImport(session)
 
-        #expect(session.source?.name == "second.svg")
+        let image = try #require(session.source?.image)
+        #expect(image.width == image.height * 2)
     }
 
     private func temporaryFile(name: String, data: Data) throws -> URL {

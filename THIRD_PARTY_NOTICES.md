@@ -2,7 +2,7 @@
 
 ## ascii-simulation-art-console
 
-The luminance quantization and glyph-atlas sampling math in `AsciiShaderSource.swift` is adapted from `ascii-simulation-art-console`.
+The luminance quantization and glyph-atlas sampling math in `AsciiShaderSource.swift` is adapted from [`ascii-simulation-art-console`](https://github.com/SkentSun/ascii-simulation-art-console).
 
 MIT License
 

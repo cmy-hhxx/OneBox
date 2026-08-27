@@ -5,6 +5,11 @@ set -euo pipefail
 script_directory=${0:A:h}
 repository_root=${script_directory:h}
 
+if [[ "$(uname -m)" != "arm64" ]]; then
+    print -u2 "Apple Silicon (arm64) is required to run the project checks."
+    exit 1
+fi
+
 while IFS=: read -r source_path line_number reference; do
     target=$reference
     target=${target#<}

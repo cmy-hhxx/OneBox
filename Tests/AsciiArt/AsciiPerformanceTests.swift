@@ -13,7 +13,7 @@ final class AsciiPerformanceTests: XCTestCase {
             var settings = AsciiSettings()
             settings.canvasPreset = .landscape
             let image = try OneBoxSourceImage.make()
-            let source = AsciiSource(image: image, name: "OneBox", isBuiltIn: true)
+            let source = AsciiSource(image: image)
             let snapshot = AsciiRenderSnapshot(
                 settings: settings,
                 transform: CanvasTransform(),

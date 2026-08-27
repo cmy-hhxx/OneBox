@@ -42,7 +42,7 @@ struct AsciiMetalIntegrationTests {
         settings.animation = .wave
         settings.animationStrength = 1
         let image = try OneBoxSourceImage.make()
-        let source = AsciiSource(image: image, name: "OneBox", isBuiltIn: true)
+        let source = AsciiSource(image: image)
         let snapshot = AsciiRenderSnapshot(
             settings: settings,
             transform: CanvasTransform(),
@@ -79,7 +79,7 @@ struct AsciiMetalIntegrationTests {
         let image = try OneBoxSourceImage.make()
         let data = try await AsciiPNGExporter.render(
             cache: AsciiRenderCache(deviceProvider: TestAsciiMetalDeviceProvider()),
-            source: AsciiSource(image: image, name: "OneBox", isBuiltIn: true),
+            source: AsciiSource(image: image),
             snapshot: AsciiRenderSnapshot(
                 settings: settings,
                 transform: CanvasTransform(),

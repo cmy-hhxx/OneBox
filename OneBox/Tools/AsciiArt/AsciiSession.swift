@@ -90,11 +90,7 @@ final class AsciiSession {
     func prepareInitialSource() {
         guard source == nil else { return }
         do {
-            source = AsciiSource(
-                image: try OneBoxSourceImage.make(),
-                name: "OneBox",
-                isBuiltIn: true
-            )
+            source = AsciiSource(image: try OneBoxSourceImage.make())
             sourceRevision += 1
         } catch {
             report(.decodeFailed)
@@ -117,11 +113,7 @@ final class AsciiSession {
                 }
                 try Task.checkCancellation()
                 guard let self, generation == self.importGeneration else { return }
-                source = AsciiSource(
-                    image: decoded.cgImage,
-                    name: decoded.sourceName,
-                    isBuiltIn: false
-                )
+                source = AsciiSource(image: decoded.cgImage)
                 sourceRevision += 1
                 isImporting = false
             } catch is CancellationError {
