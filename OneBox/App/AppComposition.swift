@@ -10,7 +10,9 @@ enum AppComposition {
             AsciiArtModule.makeRegistration(
                 deviceProvider: SystemAsciiMetalDeviceProvider()
             ),
-            StockWatchModule.registration,
+            StockWatchModule.makeRegistration(
+                platform: MacStockWatchPlatformClient()
+            ),
             BlogListenModule.registration,
             WindowFocusModule.registration,
         ])

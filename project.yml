@@ -13,6 +13,11 @@ settings:
     SWIFT_STRICT_CONCURRENCY: complete
     DEAD_CODE_STRIPPING: true
 
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift.git
+    exactVersion: 7.11.1
+
 targets:
   OneBoxRuntime:
     type: library.static
@@ -49,12 +54,17 @@ targets:
     platform: macOS
     sources:
       - path: OneBox/Tools/StockWatch
+        excludes:
+          - Resources/Sounds
     dependencies:
       - target: OneBoxRuntime
       - target: OneBoxDesignSystem
+      - package: GRDB
     settings:
       base:
         SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+        # Xcode does not propagate GRDBSQLite's Clang module map to static library targets.
+        OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -fmodule-map-file=$(BUILD_DIR)/../../SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap"
 
   BlogListenTool:
     type: library.static
@@ -99,11 +109,18 @@ targets:
       - path: OneBox/App
       - path: docs/assets/brand/onebox-mark-light.png
         buildPhase: resources
+      - path: THIRD_PARTY_NOTICES.md
+        buildPhase: resources
+      - path: OneBox/Tools/StockWatch/Resources/Sounds/bull-moo.wav
+        buildPhase: resources
+      - path: OneBox/Tools/StockWatch/Resources/Sounds/bear-growl.wav
+        buildPhase: resources
     dependencies:
       - target: OneBoxRuntime
       - target: OneBoxDesignSystem
       - target: OneBoxHost
       - target: StockWatchTool
+      - package: GRDB
       - target: BlogListenTool
       - target: WindowFocusTool
       - target: AsciiArtTool
@@ -176,6 +193,38 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.cmy.AsciiArtToolTests
         GENERATE_INFOPLIST_FILE: true
 
+  StockWatchToolTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/StockWatch
+    dependencies:
+      - target: StockWatchTool
+      - target: OneBoxRuntime
+      - target: OneBoxDesignSystem
+      - package: GRDB
+    settings:
+      base:
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+        PRODUCT_BUNDLE_IDENTIFIER: com.cmy.StockWatchToolTests
+        GENERATE_INFOPLIST_FILE: true
+
+  StockWatchPerformanceTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/StockWatchPerformance
+    dependencies:
+      - target: StockWatchTool
+      - target: OneBoxRuntime
+      - target: OneBoxDesignSystem
+      - package: GRDB
+    settings:
+      base:
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+        PRODUCT_BUNDLE_IDENTIFIER: com.cmy.StockWatchPerformanceTests
+        GENERATE_INFOPLIST_FILE: true
+
 schemes:
   OneBox:
     build:
@@ -185,6 +234,7 @@ schemes:
         OneBoxRuntimeTests: [test]
         OneBoxDesignSystemTests: [test]
         AsciiArtToolTests: [test]
+        StockWatchToolTests: [test]
     test:
       gatherCoverageData: true
       targets:
@@ -192,6 +242,7 @@ schemes:
         - OneBoxRuntimeTests
         - OneBoxDesignSystemTests
         - AsciiArtToolTests
+        - StockWatchToolTests
 
   AsciiArtBenchmark:
     build:
@@ -201,3 +252,12 @@ schemes:
       config: Release
       targets:
         - AsciiArtToolTests
+
+  StockWatchBenchmark:
+    build:
+      targets:
+        StockWatchPerformanceTests: [test]
+    test:
+      config: Release
+      targets:
+        - StockWatchPerformanceTests

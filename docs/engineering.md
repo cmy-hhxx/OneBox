@@ -7,6 +7,7 @@
 - 接口或内部格式变化时，同步更新所有当前调用者并删除旧路径。该规则不授权删除已承诺保留的用户数据。
 - 模块用小接口隐藏深实现；第二个真实消费者出现前不提取共享模块。
 - 新依赖只通过 Swift Package Manager 引入，并记录需求、维护状态、许可证和删除成本。
+- Xcode 当前不会把 GRDBSQLite 的 Clang module map 传播给 `StockWatchTool` 静态库；`project.yml` 只在该 target 的 `OTHER_SWIFT_FLAGS` 中用 `$(BUILD_DIR)/../../SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap` 定位它。调整 Xcode、包布局或 DerivedData 路径时必须用标准检查和股票看盘 benchmark 重新验证，不能把该 workaround 扩散到其他 target。
 
 ## Swift
 
@@ -28,7 +29,7 @@
 ./scripts/check.sh
 ```
 
-该脚本要求 Apple Silicon，检查 Markdown 链接和 `.swift-format`，生成工程并运行全部测试。ASCII Release 性能与内存基准另运行 `./scripts/benchmark-ascii.sh`。
+该脚本要求 Apple Silicon，检查 Markdown 链接和 `.swift-format`，生成工程并运行全部测试。ASCII Release 性能与内存基准另运行 `./scripts/benchmark-ascii.sh`；股票看盘 Release 刷新、存储与图表准备基准另运行 `./scripts/benchmark-stock-watch.sh`。
 
 | 产物 | 位置 |
 | --- | --- |
@@ -44,6 +45,6 @@
 - README 记录产品范围和入口；架构文档记录当前结构；模块、工程和设计文档记录契约；QA 记录验证方法和缺口；ADR 记录长期决策。
 - 非 ADR 文档原地更新，不保留并行旧版或按日期增长的实现日志。实现、测试和文档在同一变更中使用同一术语。
 - 架构、权限、持久化布局或运行位置变化必须写 ADR。
-- 当前没有运行时日志。新增时只使用 macOS Unified Logging，且不得记录密钥、授权信息、用户内容、完整 URL 查询参数、用户名或绝对用户路径。
+- 当前只用 macOS Unified Logging signpost 记录股票看盘数据库、刷新和批量应用的固定性能区间。新增日志不得记录密钥、授权信息、用户内容、完整 URL 查询参数、用户名或绝对用户路径。
 
 提交格式为 `<type>(<scope>): <imperative summary>`，一次提交只表达一个可回滚意图。

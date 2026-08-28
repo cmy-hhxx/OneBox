@@ -18,4 +18,11 @@ final class AppCompositionTests: XCTestCase {
         )
     }
 
+    func testStockWatchAlertSoundsAndThirdPartyNoticesAreBundled() {
+        XCTAssertNotNil(Bundle.main.url(forResource: "bull-moo", withExtension: "wav"))
+        XCTAssertNotNil(Bundle.main.url(forResource: "bear-growl", withExtension: "wav"))
+        XCTAssertNotNil(
+            Bundle.main.url(forResource: "THIRD_PARTY_NOTICES", withExtension: "md")
+        )
+    }
 }
