@@ -30,6 +30,8 @@
 
 该脚本要求 Apple Silicon，检查 Markdown 链接和 `.swift-format`，生成工程并运行全部测试。ASCII Release 性能与内存基准另运行 `./scripts/benchmark-ascii.sh`。
 
+`scripts/test.sh` 将 `build-for-testing` 与 `test-without-building` 分开。Xcode 26.6 启动 macOS test host 时会把中间 `PackageFrameworks` 目录置于搜索路径前方，dyld 可能卡在其中的 GRDB wrapper；其并行 test bundle 载入以及 RPAC/Main Thread Checker 注入也可能卡住。CLI 测试脚本会用 `xctest` 直接运行四个无宿主 bundle，并串行运行一个 App-hosted target；无宿主 target 分别保存日志、`profdata` 和 coverage report。脚本还会从生成的 `.xctestrun` 中移除该中间目录和两项注入，使 test host 使用 `OneBox.app` 内已签名的 framework。离线工具打包会移除最终 App 中仅指向构建目录的 rpath。Xcode IDE 的正常运行仍保留这些诊断器。
+
 | 产物 | 位置 |
 | --- | --- |
 | Xcode 工程 | `OneBox.xcodeproj` |

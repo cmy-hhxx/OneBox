@@ -4,6 +4,9 @@ import SwiftUI
 
 @main
 struct OneBoxApp: App {
+    @NSApplicationDelegateAdaptor(OneBoxApplicationDelegate.self)
+    private var applicationDelegate
+
     private let catalog = AppComposition.makeCatalog()
     private let previewColorScheme: ColorScheme?
     private let forcedPreviewWindowSize: CGSize?
@@ -35,6 +38,11 @@ struct OneBoxApp: App {
     var body: some Scene {
         Window("OneBox", id: "main") {
             HostView(catalog: catalog)
+                .onAppear {
+                    applicationDelegate.configureApplicationTermination {
+                        await catalog.prepareForApplicationTermination()
+                    }
+                }
                 .background {
                     WindowAspectRatioConfigurator(
                         aspectRatio: DesignMetrics.windowAspectRatio,

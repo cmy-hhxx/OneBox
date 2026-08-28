@@ -6,18 +6,25 @@ public struct ToolRegistration: Identifiable {
     public let displayName: String
 
     private let makeContent: () -> AnyView
+    private let onApplicationTermination: @MainActor () async -> Void
 
     public init<Content: View>(
         id: ToolID,
         displayName: String,
+        onApplicationTermination: @escaping @MainActor () async -> Void = {},
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.id = id
         self.displayName = displayName
         self.makeContent = { AnyView(content()) }
+        self.onApplicationTermination = onApplicationTermination
     }
 
     public func content() -> AnyView {
         makeContent()
+    }
+
+    public func prepareForApplicationTermination() async {
+        await onApplicationTermination()
     }
 }

@@ -21,3 +21,6 @@ xcuserdata/
 # Local runtime and command logs
 *.log
 Logs/
+
+# Locally fetched PodPin media tools and provenance
+Tools/cache/

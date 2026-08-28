@@ -13,4 +13,10 @@ public struct ToolCatalog {
     public func registration(for id: ToolID?) -> ToolRegistration? {
         registrations.first { $0.id == id }
     }
+
+    public func prepareForApplicationTermination() async {
+        for registration in registrations {
+            await registration.prepareForApplicationTermination()
+        }
+    }
 }

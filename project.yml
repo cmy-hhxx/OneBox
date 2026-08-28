@@ -13,6 +13,11 @@ settings:
     SWIFT_STRICT_CONCURRENCY: complete
     DEAD_CODE_STRIPPING: true
 
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift.git
+    exactVersion: 7.11.1
+
 targets:
   OneBoxRuntime:
     type: library.static
@@ -56,17 +61,28 @@ targets:
       base:
         SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
 
-  BlogListenTool:
+  PodPinTool:
     type: library.static
     platform: macOS
     sources:
-      - path: OneBox/Tools/BlogListen
+      - path: OneBox/Tools/PodPin
+        excludes:
+          - Resources/Fixtures/README.md
+          - Resources/Fixtures/podpin-sample.m4a
+          - Resources/Tools/README.md
     dependencies:
       - target: OneBoxRuntime
       - target: OneBoxDesignSystem
+      - package: GRDB
+      - package: GRDB
+        product: GRDBSQLite
+    # Xcode 26.6 does not propagate GRDBSQLite's Clang module map through a
+    # static target. Keep these flags on PodPinTool and its Swift consumers.
     settings:
       base:
         SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+        SWIFT_ENABLE_EXPLICIT_MODULES: NO
+        OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -fmodule-map-file=$(BUILD_DIR)/../../SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap"
 
   WindowFocusTool:
     type: library.static
@@ -99,12 +115,21 @@ targets:
       - path: OneBox/App
       - path: docs/assets/brand/onebox-mark-light.png
         buildPhase: resources
+      - path: THIRD_PARTY_NOTICES.md
+        buildPhase: resources
+      - path: Licenses/GRDB-MIT.txt
+        buildPhase: resources
+      - path: OneBox/Tools/PodPin/Resources/Fixtures/podpin-sample.m4a
+        buildPhase: resources
     dependencies:
       - target: OneBoxRuntime
       - target: OneBoxDesignSystem
       - target: OneBoxHost
       - target: StockWatchTool
-      - target: BlogListenTool
+      - target: PodPinTool
+      - package: GRDB
+      - package: GRDB
+        product: GRDBSQLite
       - target: WindowFocusTool
       - target: AsciiArtTool
     settings:
@@ -117,6 +142,11 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
         ENABLE_HARDENED_RUNTIME: true
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        SWIFT_ENABLE_EXPLICIT_MODULES: NO
+        OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -fmodule-map-file=$(BUILD_DIR)/../../SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap"
+      configs:
+        Release:
+          EXCLUDED_SOURCE_FILE_NAMES: podpin-sample.m4a
 
   OneBoxAppTests:
     type: bundle.unit-test
@@ -128,6 +158,8 @@ targets:
     settings:
       base:
         SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+        SWIFT_ENABLE_EXPLICIT_MODULES: NO
+        OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -fmodule-map-file=$(BUILD_DIR)/../../SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap"
         PRODUCT_BUNDLE_IDENTIFIER: com.cmy.OneBoxAppTests
         GENERATE_INFOPLIST_FILE: true
         BUNDLE_LOADER: "$(TEST_HOST)"
@@ -176,6 +208,28 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.cmy.AsciiArtToolTests
         GENERATE_INFOPLIST_FILE: true
 
+  PodPinToolTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/PodPin
+      - path: OneBox/Tools/PodPin/Resources/Fixtures/podpin-sample.m4a
+        buildPhase: resources
+    dependencies:
+      - target: PodPinTool
+      - target: OneBoxRuntime
+      - target: OneBoxDesignSystem
+      - package: GRDB
+      - package: GRDB
+        product: GRDBSQLite
+    settings:
+      base:
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+        SWIFT_ENABLE_EXPLICIT_MODULES: NO
+        OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -fmodule-map-file=$(BUILD_DIR)/../../SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap"
+        PRODUCT_BUNDLE_IDENTIFIER: com.cmy.PodPinToolTests
+        GENERATE_INFOPLIST_FILE: true
+
 schemes:
   OneBox:
     build:
@@ -185,6 +239,7 @@ schemes:
         OneBoxRuntimeTests: [test]
         OneBoxDesignSystemTests: [test]
         AsciiArtToolTests: [test]
+        PodPinToolTests: [test]
     test:
       gatherCoverageData: true
       targets:
@@ -192,6 +247,7 @@ schemes:
         - OneBoxRuntimeTests
         - OneBoxDesignSystemTests
         - AsciiArtToolTests
+        - PodPinToolTests
 
   AsciiArtBenchmark:
     build:
