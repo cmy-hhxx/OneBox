@@ -29,11 +29,11 @@ all three tools. Before signing, it removes build-local `PackageFrameworks` rpat
 executables. It then signs every nested executable and the app with Hardened
 Runtime enabled. The PyInstaller-based `yt-dlp` receives only the
 `com.apple.security.cs.disable-library-validation` entitlement required to load
-its signed unpacked Python runtime. The package step preserves existing app
-entitlements, matches every tool's reported semantic version to the lock after
-final signing, verifies yt-dlp's exact effective entitlement set, and checks the
-runtime flag, relocatable rpaths, and the app's deep strict
-signature.
+its signed unpacked Python runtime. The package step requires the outer app's
+effective entitlement set to be empty before and after final signing, matches
+every tool's reported semantic version to the lock, verifies yt-dlp's exact
+effective entitlement set, and checks the runtime flag, relocatable rpaths, and
+the app's deep strict signature.
 
 FFmpeg and FFprobe are locally built from the pinned official 6.1.1 source
 archive; their exact configure arguments and source digest are included in the
