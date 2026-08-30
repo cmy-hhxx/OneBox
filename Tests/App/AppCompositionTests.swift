@@ -32,4 +32,12 @@ final class AppCompositionTests: XCTestCase {
         XCTAssertTrue(adapter.makeAudioPlayer(item: playerItem).currentItem === playerItem)
     }
 
+    func testToolResourcesAndThirdPartyNoticesAreBundled() {
+        XCTAssertNotNil(Bundle.main.url(forResource: "bull-moo", withExtension: "wav"))
+        XCTAssertNotNil(Bundle.main.url(forResource: "bear-growl", withExtension: "wav"))
+        XCTAssertNotNil(Bundle.main.url(forResource: "GRDB-MIT", withExtension: "txt"))
+        XCTAssertNotNil(
+            Bundle.main.url(forResource: "THIRD_PARTY_NOTICES", withExtension: "md")
+        )
+    }
 }

@@ -119,6 +119,7 @@ set -o pipefail
             OneBoxRuntimeTests
             OneBoxDesignSystemTests
             AsciiArtToolTests
+            StockWatchToolTests
             PodPinToolTests
         )
         hosted_test_targets=(OneBoxAppTests)

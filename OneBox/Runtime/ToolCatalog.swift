@@ -15,8 +15,19 @@ public struct ToolCatalog {
     }
 
     public func prepareForApplicationTermination() async {
-        for registration in registrations {
-            await registration.prepareForApplicationTermination()
+        let tasks = registrations.map { registration in
+            Task { @MainActor in
+                await registration.prepareForApplicationTermination()
+            }
+        }
+        await withTaskCancellationHandler {
+            for task in tasks {
+                await task.value
+            }
+        } onCancel: {
+            for task in tasks {
+                task.cancel()
+            }
         }
     }
 }
