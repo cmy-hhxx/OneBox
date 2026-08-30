@@ -87,6 +87,6 @@ schemes:
         OneBox: all
         OneBoxAppTests: [test]
     test:
-      gatherCoverageData: true
+      gatherCoverageData: false
       targets:
         - OneBoxAppTests
