@@ -47,7 +47,6 @@ final class WindowGeometryView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        applyGeometry()
         Task { @MainActor [weak self] in
             await Task.yield()
             self?.applyGeometry(applyForcedWindowSize: true)

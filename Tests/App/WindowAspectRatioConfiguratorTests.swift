@@ -23,6 +23,21 @@ final class WindowAspectRatioConfiguratorTests: XCTestCase {
     }
 
     @MainActor
+    func testWindowAttachmentDefersGeometryUntilSwiftUIDefaultSizeCanSettle() {
+        let window = makeWindow(size: CGSize(width: 800, height: 600))
+        let originalMinimumSize = window.minSize
+        let view = WindowGeometryView(
+            aspectRatio: CGSize(width: 1048, height: 648),
+            minimumWindowSize: CGSize(width: 899, height: 556),
+            forcedWindowSize: nil
+        )
+
+        window.contentView = view
+
+        XCTAssertEqual(window.minSize, originalMinimumSize)
+    }
+
+    @MainActor
     func testAppliesForcedSizeOnlyOnce() {
         let initialSize = CGSize(width: 800, height: 600)
         let forcedSize = CGSize(width: 1048, height: 648)
