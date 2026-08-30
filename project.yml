@@ -16,6 +16,8 @@ settings:
 packages:
   OneBoxCore:
     path: Packages/OneBoxCore
+  AsciiArtTool:
+    path: Packages/Tools/AsciiArtTool
   GRDB:
     url: https://github.com/groue/GRDB.swift.git
     exactVersion: 7.11.1
@@ -65,27 +67,11 @@ targets:
         SWIFT_ENABLE_EXPLICIT_MODULES: NO
         OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -fmodule-map-file=$(BUILD_DIR)/../../SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap"
 
-  AsciiArtTool:
-    type: library.static
-    platform: macOS
-    sources:
-      - path: OneBox/Tools/AsciiArt
-    dependencies:
-      - package: OneBoxCore
-        product: OneBoxRuntime
-      - package: OneBoxCore
-        product: OneBoxDesignSystem
-    settings:
-      base:
-        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
-
   OneBox:
     type: application
     platform: macOS
     sources:
       - path: OneBox/App
-      - path: docs/assets/brand/onebox-mark-light.png
-        buildPhase: resources
       - path: THIRD_PARTY_NOTICES.md
         buildPhase: resources
       - path: Licenses/GRDB-MIT.txt
@@ -108,7 +94,8 @@ targets:
       - package: GRDB
       - package: GRDB
         product: GRDBSQLite
-      - target: AsciiArtTool
+      - package: AsciiArtTool
+        product: AsciiArtTool
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cmy.OneBox
@@ -141,25 +128,6 @@ targets:
         GENERATE_INFOPLIST_FILE: true
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/OneBox.app/Contents/MacOS/OneBox"
-
-  AsciiArtToolTests:
-    type: bundle.unit-test
-    platform: macOS
-    sources:
-      - path: Tests/AsciiArt
-      - path: docs/assets/brand/onebox-mark-light.png
-        buildPhase: resources
-    dependencies:
-      - target: AsciiArtTool
-      - package: OneBoxCore
-        product: OneBoxRuntime
-      - package: OneBoxCore
-        product: OneBoxDesignSystem
-    settings:
-      base:
-        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
-        PRODUCT_BUNDLE_IDENTIFIER: com.cmy.AsciiArtToolTests
-        GENERATE_INFOPLIST_FILE: true
 
   PodPinToolTests:
     type: bundle.unit-test
@@ -227,25 +195,14 @@ schemes:
       targets:
         OneBox: all
         OneBoxAppTests: [test]
-        AsciiArtToolTests: [test]
         PodPinToolTests: [test]
         StockWatchToolTests: [test]
     test:
       gatherCoverageData: true
       targets:
         - OneBoxAppTests
-        - AsciiArtToolTests
         - PodPinToolTests
         - StockWatchToolTests
-
-  AsciiArtBenchmark:
-    build:
-      targets:
-        AsciiArtToolTests: [test]
-    test:
-      config: Release
-      targets:
-        - AsciiArtToolTests
 
   StockWatchBenchmark:
     build:

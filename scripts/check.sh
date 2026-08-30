@@ -29,6 +29,14 @@ done < <(
         "$repository_root"
 )
 
+brand_master="$repository_root/docs/assets/brand/onebox-mark-light.png"
+ascii_brand_resource="$repository_root/Packages/Tools/AsciiArtTool/Sources/AsciiArtTool/Resources/onebox-mark-light.png"
+if ! cmp -s "$brand_master" "$ascii_brand_resource"; then
+    print -u2 "ASCII package brand resource differs from $brand_master."
+    print -u2 "Run: swift scripts/generate-brand-assets.swift"
+    exit 1
+fi
+
 xcrun swift-format lint \
     --configuration "$repository_root/.swift-format" \
     --recursive \

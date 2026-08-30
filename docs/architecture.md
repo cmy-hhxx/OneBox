@@ -1,22 +1,22 @@
 # 架构
 
-OneBox 是静态注册的模块化单体，见 [ADR-0001](decisions/0001-use-static-module-registration.md)。独立 Xcode target 强制编译依赖，但所有模块仍在同一进程中，不构成安全或崩溃隔离。
+OneBox 是静态注册的模块化单体，见 [ADR-0001](decisions/0001-use-static-module-registration.md)。共享模块和已迁移工具通过本地 Swift package 强制编译依赖；所有模块仍在同一进程中，不构成安全或崩溃隔离。
 
 ## 模块
 
-| Target | 源目录 | 职责 | 依赖 |
+| Module | Package 或源目录 | 职责 | 依赖 |
 | --- | --- | --- | --- |
-| `OneBox` | `OneBox/App` | 应用生命周期、窗口、组合根和生产 adapter；打包品牌、许可证、fixture 与股票提醒声音 | Host、Runtime、DesignSystem、全部 Tool、GRDB 链接产品 |
-| `OneBoxHost` | `OneBox/Host` | 侧边栏、选择和内容区域 | Runtime、DesignSystem |
-| `OneBoxRuntime` | `OneBox/Runtime` | 工具 ID、注册值、目录和应用退出 hook | 无 |
-| `OneBoxDesignSystem` | `OneBox/DesignSystem` | 颜色、字体、几何和占位视图 | 无 |
-| `AsciiArtTool` | `OneBox/Tools/AsciiArt` | ASCII 会话、渲染和导出 | Runtime、DesignSystem |
+| `OneBox` | `OneBox/App` | 应用生命周期、窗口、组合根和生产 adapter；打包许可证、Debug fixture 与股票提醒声音 | Host、Runtime、DesignSystem、全部 Tool、GRDB 链接产品 |
+| `OneBoxHost` | `Packages/OneBoxCore/Sources/OneBoxHost` | 侧边栏、选择和内容区域 | Runtime、DesignSystem |
+| `OneBoxRuntime` | `Packages/OneBoxCore/Sources/OneBoxRuntime` | 工具 ID、注册值、目录和应用退出 hook | 无 |
+| `OneBoxDesignSystem` | `Packages/OneBoxCore/Sources/OneBoxDesignSystem` | 颜色、字体和几何 | 无 |
+| `AsciiArtTool` | `Packages/Tools/AsciiArtTool` | ASCII 会话、渲染、资源、导出和 package tests | Runtime、DesignSystem |
 | `StockWatchTool` | `OneBox/Tools/StockWatch` | 行情、自选、提醒、缓存和迁移 | Runtime、DesignSystem、GRDB 7.11.1 |
 | `PodPinTool` | `OneBox/Tools/PodPin` | 音频导入、资料库、下载、队列和播放 | Runtime、DesignSystem、GRDB 7.11.1 |
 
-Tool target 默认 `nonisolated`；SwiftUI 入口和可观察状态显式归 `MainActor`，网络与数据库工作不阻塞主 actor。GRDB 由 Swift Package Manager 精确固定到 7.11.1。移除它需要重写两个工具各自的数据库边界、迁移和并发验证。
+Runtime 与 Tool module 默认 `nonisolated`；DesignSystem、Host、SwiftUI 入口和可观察状态归 `MainActor`，网络与数据库工作不阻塞主 actor。GRDB 由 Swift Package Manager 精确固定到 7.11.1。移除它需要重写两个工具各自的数据库边界、迁移和并发验证。
 
-依赖方向由 `project.yml` 定义，具体边界见 [ADR-0003](decisions/0003-enforce-module-dependencies-with-targets.md) 和 [ADR-0004](decisions/0004-keep-app-specific-platform-code-in-app.md)。
+每个 `Package.swift` 定义 package 内依赖、资源和编译设置；`project.yml` 定义 App 组装、签名、App-hosted tests 和尚未迁移的 Xcode target。当前边界见 [ADR-0010](decisions/0010-require-package-per-tool-isolation.md) 和 [ADR-0004](decisions/0004-keep-app-specific-platform-code-in-app.md)；原 Xcode-target 决定 [ADR-0003](decisions/0003-enforce-module-dependencies-with-targets.md) 已被取代。
 
 ## 边界
 
@@ -82,4 +82,4 @@ PodPin 继续使用 `~/Library/Application Support/PodPin/` 和原 PodPin 偏好
 - PodPin 首次被选择时才开库并安装系统媒体命令；离屏后已开始的播放和下载可以继续，应用退出会等待其 flush 和清理。
 - 股票看盘只用 Unified Logging signpost 记录固定性能区间；PodPin 使用脱敏事件日志。两者都不记录用户内容、完整查询或绝对用户路径。
 
-工具接入规则见 [工具模块契约](module-contract.md)；当前事实仍以源码、测试和 `project.yml` 为准。
+工具接入规则见 [工具模块契约](module-contract.md)；当前事实仍以源码、测试、各 `Package.swift` 和 `project.yml` 为准。

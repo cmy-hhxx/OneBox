@@ -14,7 +14,8 @@ ToolRegistration(id: id, displayName: name) {
 
 ## 边界与生命周期
 
-- 工具的项目内依赖只包括 Runtime 和 DesignSystem，不导入其他工具、Host 或 App；经记录并由 `project.yml` 固定的第三方包仍留在使用它的工具 target。
+- 每个工具位于 `Packages/Tools/<ToolName>/`，只发布同名静态 library product，并从自己的 manifest 精确声明所需 Runtime、DesignSystem 和第三方 package；不得依赖或导入其他工具、Host 或 App。
+- 工具 package 实体拥有自己的 `Sources`、`Tests` 和业务资源。实现使用 `Bundle.module` 读取 package 资源；只有 App 发行流程拥有的资源或二进制才通过窄接口或显式 URL 注入。
 - 跨模块平台接口由工具定义，由 App 提供生产 adapter；测试使用同一接口提供 stand-in。
 - 工具内容在被选择时构造，首个 registration 在应用启动时默认打开。当前没有启动后台激活机制；已被用户激活的媒体工具可以继续拥有明确开始的播放和下载。
 - 同一工具最多有一个活动实例；重复打开不得重复注册监听器。
@@ -30,7 +31,7 @@ ToolRegistration(id: id, displayName: name) {
 
 ## 新增工具
 
-1. 创建独立 Tool target，并满足上述依赖方向。
-2. 在 `AppComposition` 注册一次。
-3. 覆盖注册、生命周期和平台接缝测试。
-4. 确认移除该 registration 后，宿主与其他工具仍能构建。
+1. 创建 `Packages/Tools/<ToolName>/Package.swift`、同名静态 library product、源码、测试和所需实体资源。
+2. 从 package 根目录独立运行 Debug/Release build 与 tests，并确认 manifest 不依赖其他工具。
+3. 只把组合所需入口和真实平台 seam 标记为 `public`；在 `AppComposition` 注册一次并由 App 提供生产 adapter。
+4. 覆盖注册、生命周期、资源和平台接缝测试，再确认移除该 package product 和 registration 后宿主与其他工具仍能构建。

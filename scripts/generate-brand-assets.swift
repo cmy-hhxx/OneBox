@@ -28,6 +28,9 @@ let scriptURL = URL(fileURLWithPath: #filePath)
 let repositoryRoot = scriptURL.deletingLastPathComponent().deletingLastPathComponent()
 let lightMasterURL = repositoryRoot.appending(path: "docs/assets/brand/onebox-mark-light.png")
 let darkMasterURL = repositoryRoot.appending(path: "docs/assets/brand/onebox-mark-dark.png")
+let asciiResourceURL = repositoryRoot.appending(
+    path: "Packages/Tools/AsciiArtTool/Sources/AsciiArtTool/Resources/onebox-mark-light.png"
+)
 let outputDirectory = repositoryRoot.appending(
     path: "OneBox/App/Assets.xcassets/AppIcon.appiconset",
     directoryHint: .isDirectory
@@ -41,6 +44,11 @@ guard NSImage(contentsOf: darkMasterURL) != nil else {
 }
 
 try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+try FileManager.default.createDirectory(
+    at: asciiResourceURL.deletingLastPathComponent(),
+    withIntermediateDirectories: true
+)
+try Data(contentsOf: lightMasterURL).write(to: asciiResourceURL, options: .atomic)
 
 for slot in slots {
     guard
@@ -84,6 +92,6 @@ for slot in slots {
 }
 
 print(
-    "Generated \(slots.count) AppIcon files from \(lightMasterURL.lastPathComponent) "
-        + "after validating the paired dark master"
+    "Generated \(slots.count) AppIcon files from \(lightMasterURL.lastPathComponent), "
+        + "synchronized the ASCII package resource, and validated the paired dark master"
 )

@@ -31,7 +31,17 @@ final class AppCompositionTests: XCTestCase {
         XCTAssertTrue(adapter.makeAudioPlayer(item: playerItem).currentItem === playerItem)
     }
 
-    func testToolResourcesAndThirdPartyNoticesAreBundled() {
+    func testToolResourcesAndThirdPartyNoticesAreBundled() throws {
+        let asciiBundleURL = try XCTUnwrap(
+            Bundle.main.url(
+                forResource: "AsciiArtTool_AsciiArtTool",
+                withExtension: "bundle"
+            )
+        )
+        let asciiBundle = try XCTUnwrap(Bundle(url: asciiBundleURL))
+        XCTAssertNotNil(
+            asciiBundle.url(forResource: "onebox-mark-light", withExtension: "png")
+        )
         XCTAssertNotNil(Bundle.main.url(forResource: "bull-moo", withExtension: "wav"))
         XCTAssertNotNil(Bundle.main.url(forResource: "bear-growl", withExtension: "wav"))
         XCTAssertNotNil(Bundle.main.url(forResource: "GRDB-MIT", withExtension: "txt"))
