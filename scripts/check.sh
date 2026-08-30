@@ -35,6 +35,7 @@ xcrun swift-format lint \
     --parallel \
     --strict \
     "$repository_root/OneBox" \
+    "$repository_root/Packages" \
     "$repository_root/Tests"
 
 "$script_directory/test.sh"

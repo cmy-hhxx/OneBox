@@ -14,41 +14,13 @@ settings:
     DEAD_CODE_STRIPPING: true
 
 packages:
+  OneBoxCore:
+    path: Packages/OneBoxCore
   GRDB:
     url: https://github.com/groue/GRDB.swift.git
     exactVersion: 7.11.1
 
 targets:
-  OneBoxRuntime:
-    type: library.static
-    platform: macOS
-    sources:
-      - path: OneBox/Runtime
-    settings:
-      base:
-        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
-
-  OneBoxDesignSystem:
-    type: library.static
-    platform: macOS
-    sources:
-      - path: OneBox/DesignSystem
-    settings:
-      base:
-        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
-
-  OneBoxHost:
-    type: library.static
-    platform: macOS
-    sources:
-      - path: OneBox/Host
-    dependencies:
-      - target: OneBoxRuntime
-      - target: OneBoxDesignSystem
-    settings:
-      base:
-        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
-
   StockWatchTool:
     type: library.static
     platform: macOS
@@ -57,8 +29,10 @@ targets:
         excludes:
           - Resources/Sounds
     dependencies:
-      - target: OneBoxRuntime
-      - target: OneBoxDesignSystem
+      - package: OneBoxCore
+        product: OneBoxRuntime
+      - package: OneBoxCore
+        product: OneBoxDesignSystem
       - package: GRDB
     settings:
       base:
@@ -76,8 +50,10 @@ targets:
           - Resources/Fixtures/podpin-sample.m4a
           - Resources/Tools/README.md
     dependencies:
-      - target: OneBoxRuntime
-      - target: OneBoxDesignSystem
+      - package: OneBoxCore
+        product: OneBoxRuntime
+      - package: OneBoxCore
+        product: OneBoxDesignSystem
       - package: GRDB
       - package: GRDB
         product: GRDBSQLite
@@ -95,8 +71,10 @@ targets:
     sources:
       - path: OneBox/Tools/WindowFocus
     dependencies:
-      - target: OneBoxRuntime
-      - target: OneBoxDesignSystem
+      - package: OneBoxCore
+        product: OneBoxRuntime
+      - package: OneBoxCore
+        product: OneBoxDesignSystem
     settings:
       base:
         SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
@@ -107,8 +85,10 @@ targets:
     sources:
       - path: OneBox/Tools/AsciiArt
     dependencies:
-      - target: OneBoxRuntime
-      - target: OneBoxDesignSystem
+      - package: OneBoxCore
+        product: OneBoxRuntime
+      - package: OneBoxCore
+        product: OneBoxDesignSystem
     settings:
       base:
         SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
@@ -131,9 +111,12 @@ targets:
       - path: OneBox/Tools/StockWatch/Resources/Sounds/bear-growl.wav
         buildPhase: resources
     dependencies:
-      - target: OneBoxRuntime
-      - target: OneBoxDesignSystem
-      - target: OneBoxHost
+      - package: OneBoxCore
+        product: OneBoxRuntime
+      - package: OneBoxCore
+        product: OneBoxDesignSystem
+      - package: OneBoxCore
+        product: OneBoxHost
       - target: StockWatchTool
       - target: PodPinTool
       - package: GRDB
@@ -174,32 +157,6 @@ targets:
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/OneBox.app/Contents/MacOS/OneBox"
 
-  OneBoxRuntimeTests:
-    type: bundle.unit-test
-    platform: macOS
-    sources:
-      - path: Tests/Runtime
-    dependencies:
-      - target: OneBoxRuntime
-    settings:
-      base:
-        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
-        PRODUCT_BUNDLE_IDENTIFIER: com.cmy.OneBoxRuntimeTests
-        GENERATE_INFOPLIST_FILE: true
-
-  OneBoxDesignSystemTests:
-    type: bundle.unit-test
-    platform: macOS
-    sources:
-      - path: Tests/DesignSystem
-    dependencies:
-      - target: OneBoxDesignSystem
-    settings:
-      base:
-        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
-        PRODUCT_BUNDLE_IDENTIFIER: com.cmy.OneBoxDesignSystemTests
-        GENERATE_INFOPLIST_FILE: true
-
   AsciiArtToolTests:
     type: bundle.unit-test
     platform: macOS
@@ -209,8 +166,10 @@ targets:
         buildPhase: resources
     dependencies:
       - target: AsciiArtTool
-      - target: OneBoxRuntime
-      - target: OneBoxDesignSystem
+      - package: OneBoxCore
+        product: OneBoxRuntime
+      - package: OneBoxCore
+        product: OneBoxDesignSystem
     settings:
       base:
         SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
@@ -226,8 +185,10 @@ targets:
         buildPhase: resources
     dependencies:
       - target: PodPinTool
-      - target: OneBoxRuntime
-      - target: OneBoxDesignSystem
+      - package: OneBoxCore
+        product: OneBoxRuntime
+      - package: OneBoxCore
+        product: OneBoxDesignSystem
       - package: GRDB
       - package: GRDB
         product: GRDBSQLite
@@ -246,8 +207,10 @@ targets:
       - path: Tests/StockWatch
     dependencies:
       - target: StockWatchTool
-      - target: OneBoxRuntime
-      - target: OneBoxDesignSystem
+      - package: OneBoxCore
+        product: OneBoxRuntime
+      - package: OneBoxCore
+        product: OneBoxDesignSystem
       - package: GRDB
     settings:
       base:
@@ -262,8 +225,10 @@ targets:
       - path: Tests/StockWatchPerformance
     dependencies:
       - target: StockWatchTool
-      - target: OneBoxRuntime
-      - target: OneBoxDesignSystem
+      - package: OneBoxCore
+        product: OneBoxRuntime
+      - package: OneBoxCore
+        product: OneBoxDesignSystem
       - package: GRDB
     settings:
       base:
@@ -277,8 +242,6 @@ schemes:
       targets:
         OneBox: all
         OneBoxAppTests: [test]
-        OneBoxRuntimeTests: [test]
-        OneBoxDesignSystemTests: [test]
         AsciiArtToolTests: [test]
         PodPinToolTests: [test]
         StockWatchToolTests: [test]
@@ -286,8 +249,6 @@ schemes:
       gatherCoverageData: true
       targets:
         - OneBoxAppTests
-        - OneBoxRuntimeTests
-        - OneBoxDesignSystemTests
         - AsciiArtToolTests
         - PodPinToolTests
         - StockWatchToolTests

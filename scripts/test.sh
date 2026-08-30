@@ -35,8 +35,49 @@ run_id="$(date +%Y%m%d-%H%M%S)-$$"
 log_path="$artifact_root/Logs/test-$run_id.log"
 result_directory="$artifact_root/TestResults/OneBox-$run_id"
 products_root="$artifact_root/DerivedData/Build/Products"
+swiftpm_root="$artifact_root/SwiftPM"
 ffmpeg_path=""
 ffprobe_path=""
+
+run_swift_package_tests() {
+    local package_name=$1
+    local package_path=$2
+    shift 2
+    local scratch_path="$swiftpm_root/$package_name"
+    local target_log="$result_directory/$package_name.log"
+    local coverage_output="$result_directory/$package_name-coverage.json"
+    local coverage_path
+
+    print "Building and testing $package_name"
+    {
+        xcrun swift build \
+            --package-path "$package_path" \
+            --scratch-path "$scratch_path"
+        xcrun swift test \
+            --package-path "$package_path" \
+            --scratch-path "$scratch_path" \
+            --enable-code-coverage \
+            "$@"
+    } 2>&1 | tee "$target_log"
+
+    coverage_path="$(
+        xcrun swift test \
+            --package-path "$package_path" \
+            --scratch-path "$scratch_path" \
+            --show-codecov-path
+    )"
+    if [[ ! -f "$coverage_path" ]]; then
+        print -u2 "No coverage report produced for $package_name."
+        exit 1
+    fi
+    jq -e --arg source_root "$package_path/Sources/" \
+        '[.data[].files[].filename | select(startswith($source_root))] | length > 0' \
+        "$coverage_path" >/dev/null || {
+        print -u2 "Coverage report does not contain package sources for $package_name."
+        exit 1
+    }
+    cp "$coverage_path" "$coverage_output"
+}
 if [[ "$live_downloads" == "YES" ]]; then
     tool_lock="$repository_root/Tools/tool-lock.json"
     ffmpeg_relative_path="$(jq -er '.tools[] | select(.name == "ffmpeg") | .preparedCacheFile' "$tool_lock")"
@@ -51,12 +92,19 @@ fi
 # so a later test build cannot mix its signature with XCTest products.
 rm -rf "$products_root/Debug/OneBox.app"
 rm -f "$products_root"/OneBox_*.xctestrun(N)
+mkdir -p "$result_directory" "$swiftpm_root"
 
 cd "$artifact_root"
 set -o pipefail
 {
     if [[ "$live_downloads" == "YES" ]]; then
         "$script_directory/fetch-podpin-tools.sh"
+    fi
+
+    if [[ "$test_mode" == "default" ]]; then
+        run_swift_package_tests \
+            OneBoxCore \
+            "$repository_root/Packages/OneBoxCore"
     fi
 
     xcodebuild \
@@ -116,8 +164,6 @@ set -o pipefail
 
     if [[ "$test_mode" == "default" ]]; then
         hostless_test_targets=(
-            OneBoxRuntimeTests
-            OneBoxDesignSystemTests
             AsciiArtToolTests
             StockWatchToolTests
             PodPinToolTests
@@ -127,7 +173,6 @@ set -o pipefail
         hostless_test_targets=(PodPinToolTests)
         hosted_test_targets=()
     fi
-    mkdir -p "$result_directory"
     for test_target in "${hostless_test_targets[@]}"; do
         print "Running $test_target"
         test_bundle="$products_root/Debug/$test_target.xctest"
