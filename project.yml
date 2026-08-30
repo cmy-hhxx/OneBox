@@ -65,20 +65,6 @@ targets:
         SWIFT_ENABLE_EXPLICIT_MODULES: NO
         OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -fmodule-map-file=$(BUILD_DIR)/../../SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap"
 
-  WindowFocusTool:
-    type: library.static
-    platform: macOS
-    sources:
-      - path: OneBox/Tools/WindowFocus
-    dependencies:
-      - package: OneBoxCore
-        product: OneBoxRuntime
-      - package: OneBoxCore
-        product: OneBoxDesignSystem
-    settings:
-      base:
-        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
-
   AsciiArtTool:
     type: library.static
     platform: macOS
@@ -122,7 +108,6 @@ targets:
       - package: GRDB
       - package: GRDB
         product: GRDBSQLite
-      - target: WindowFocusTool
       - target: AsciiArtTool
     settings:
       base:

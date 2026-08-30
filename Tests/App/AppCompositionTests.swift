@@ -16,7 +16,6 @@ final class AppCompositionTests: XCTestCase {
                 "ascii-art",
                 "stock-watch",
                 "podpin",
-                "window-focus",
             ]
         )
     }

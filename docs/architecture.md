@@ -13,7 +13,6 @@ OneBox 是静态注册的模块化单体，见 [ADR-0001](decisions/0001-use-sta
 | `AsciiArtTool` | `OneBox/Tools/AsciiArt` | ASCII 会话、渲染和导出 | Runtime、DesignSystem |
 | `StockWatchTool` | `OneBox/Tools/StockWatch` | 行情、自选、提醒、缓存和迁移 | Runtime、DesignSystem、GRDB 7.11.1 |
 | `PodPinTool` | `OneBox/Tools/PodPin` | 音频导入、资料库、下载、队列和播放 | Runtime、DesignSystem、GRDB 7.11.1 |
-| `WindowFocusTool` | `OneBox/Tools/WindowFocus` | 当前占位工具入口 | Runtime、DesignSystem |
 
 Tool target 默认 `nonisolated`；SwiftUI 入口和可观察状态显式归 `MainActor`，网络与数据库工作不阻塞主 actor。GRDB 由 Swift Package Manager 精确固定到 7.11.1。移除它需要重写两个工具各自的数据库边界、迁移和并发验证。
 
@@ -81,7 +80,6 @@ PodPin 继续使用 `~/Library/Application Support/PodPin/` 和原 PodPin 偏好
 - ASCII 工坊在注册时创建内存会话和惰性渲染缓存，不请求设备或执行 I/O。隐藏、窗口失活或暂停时停止持续绘制，关闭视图时取消导入和导出。
 - 股票看盘已接入既有 registration；只在可见期间打开本地库和公开行情源，不请求系统通知权限，也不执行后台监控。
 - PodPin 首次被选择时才开库并安装系统媒体命令；离屏后已开始的播放和下载可以继续，应用退出会等待其 flush 和清理。
-- 窗口聚焦仍只显示“待接入”。
 - 股票看盘只用 Unified Logging signpost 记录固定性能区间；PodPin 使用脱敏事件日志。两者都不记录用户内容、完整查询或绝对用户路径。
 
 工具接入规则见 [工具模块契约](module-contract.md)；当前事实仍以源码、测试和 `project.yml` 为准。

@@ -2,7 +2,6 @@ import AsciiArtTool
 import OneBoxRuntime
 import PodPinTool
 import StockWatchTool
-import WindowFocusTool
 
 enum AppComposition {
     static func makeCatalog() -> ToolCatalog {
@@ -16,7 +15,6 @@ enum AppComposition {
             PodPinModule.makeRegistration(
                 platform: PodPinSystemPlatformAdapter()
             ),
-            WindowFocusModule.registration,
         ])
     }
 }
