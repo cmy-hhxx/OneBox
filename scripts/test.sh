@@ -70,10 +70,16 @@ run_swift_package_tests() {
         print -u2 "No coverage report produced for $package_name."
         exit 1
     fi
-    jq -e --arg source_root "$package_path/Sources/" \
-        '[.data[].files[].filename | select(startswith($source_root))] | length > 0' \
-        "$coverage_path" >/dev/null || {
-        print -u2 "Coverage report does not contain package sources for $package_name."
+    jq -e --arg source_root "$package_path/Sources/" '
+        [
+            .data[].files[]
+            | select(.filename | startswith($source_root))
+            | select(.summary.lines.count > 0)
+        ] as $source_files
+        | ($source_files | length) > 0
+            and (($source_files | map(.summary.lines.covered) | add // 0) > 0)
+    ' "$coverage_path" >/dev/null || {
+        print -u2 "Coverage report does not contain covered package sources for $package_name."
         exit 1
     }
     cp "$coverage_path" "$coverage_output"
@@ -130,6 +136,7 @@ set -o pipefail
             -destination "platform=macOS,arch=$host_architecture" \
             -derivedDataPath "$artifact_root/DerivedData" \
             -enableCodeCoverage YES \
+            ENABLE_CODE_COVERAGE=YES \
             build-for-testing
 
         xctestrun_files=("$products_root"/OneBox_*.xctestrun(N))
@@ -176,10 +183,36 @@ set -o pipefail
         xcodebuild \
             -xctestrun "$xctestrun_path" \
             -destination "platform=macOS,arch=$host_architecture" \
+            -enableCodeCoverage YES \
             -parallel-testing-enabled NO \
             -only-testing:OneBoxAppTests \
             -resultBundlePath "$result_directory/OneBoxAppTests.xcresult" \
+            ENABLE_CODE_COVERAGE=YES \
             test-without-building
+
+        app_coverage_output="$result_directory/OneBoxAppTests-coverage.json"
+        xcrun xccov view --report --json \
+            "$result_directory/OneBoxAppTests.xcresult" \
+            > "$app_coverage_output"
+        jq -e \
+            --arg app_source_root "$repository_root/OneBox/App/" \
+            --arg test_source_root "$repository_root/Tests/App/" '
+                any(.targets[];
+                    .name == "OneBox.app"
+                    and .coveredLines > 0
+                    and .executableLines > 0
+                    and any(.files[]?; .path | startswith($app_source_root))
+                )
+                and any(.targets[];
+                    .name == "OneBoxAppTests.xctest"
+                    and .coveredLines > 0
+                    and .executableLines > 0
+                    and any(.files[]?; .path | startswith($test_source_root))
+                )
+            ' "$app_coverage_output" >/dev/null || {
+            print -u2 "App-hosted coverage is missing App or test sources."
+            exit 1
+        }
     fi
 } 2>&1 | tee "$log_path"
 

@@ -32,7 +32,7 @@
 
 该脚本要求 Apple Silicon，检查 Markdown 链接和 `.swift-format`，生成工程并运行全部测试。ASCII Release 性能与内存基准另运行 `./scripts/benchmark-ascii.sh`；股票看盘 Release 刷新、存储与图表准备基准另运行 `./scripts/benchmark-stock-watch.sh`。
 
-`scripts/test.sh` 分别构建和测试 `OneBoxCore`、`AsciiArtTool`、`StockWatchTool`、`PodPinTool` 四个 Swift package，并保存各自的日志和 JSON coverage；默认模式随后只在 Xcode `build-for-testing` 命令显式启用 coverage，再通过 `test-without-building` 串行运行 App-hosted target。共享 scheme 本身关闭 coverage，普通 Debug/Release App build 不得带 LLVM coverage 插桩。两个 PodPin live 模式把 opt-in flags 和锁定媒体工具路径直接导出给 SwiftPM test 进程，不修改 `.xctestrun`，并保留 package coverage。Xcode 26.6 启动 macOS test host 时会把中间 `PackageFrameworks` 目录置于搜索路径前方，dyld 可能卡在其中的 GRDB wrapper；其并行 test bundle 载入以及 RPAC/Main Thread Checker 注入也可能卡住。脚本会从生成的 `.xctestrun` 中移除该中间目录和两项注入，使 test host 使用 `OneBox.app` 内已签名的 framework。离线工具打包会拒绝带 coverage 插桩或 App entitlement 的 Release 产物，并移除最终 App 中仅指向构建目录的 rpath。Xcode IDE 的正常运行仍保留这些诊断器。
+`scripts/test.sh` 分别构建和测试 `OneBoxCore`、`AsciiArtTool`、`StockWatchTool`、`PodPinTool` 四个 Swift package，并保存各自的日志和 JSON coverage；coverage 门要求报告包含 package 自身实际覆盖的源码行。默认模式随后仅在 scheme 的 Test action 以及 Xcode `build-for-testing`、`test-without-building` 命令显式启用 coverage，并要求 App 与 App-hosted tests 的 `xccov` 报告都包含实际覆盖行。工程的基础 build setting 关闭 coverage，普通 Debug/Release App build 不得带 LLVM coverage 插桩。两个 PodPin live 模式把 opt-in flags 和锁定媒体工具路径直接导出给 SwiftPM test 进程，不修改 `.xctestrun`，并保留 package coverage。Xcode 26.6 启动 macOS test host 时会把中间 `PackageFrameworks` 目录置于搜索路径前方，dyld 可能卡在其中的 GRDB wrapper；其并行 test bundle 载入以及 RPAC/Main Thread Checker 注入也可能卡住。脚本会从生成的 `.xctestrun` 中移除该中间目录和两项注入，使 test host 使用 `OneBox.app` 内已签名的 framework。离线工具打包会拒绝带 coverage 插桩或 App entitlement 的 Release 产物，并移除最终 App 中仅指向构建目录的 rpath。Xcode IDE 的正常运行仍保留这些诊断器。
 
 | 产物 | 位置 |
 | --- | --- |
