@@ -21,3 +21,4 @@ xcuserdata/
 # Local runtime and command logs
 *.log
 Logs/
+.worktrees/
