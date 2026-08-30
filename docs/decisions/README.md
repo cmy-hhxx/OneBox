@@ -8,6 +8,7 @@
 | [ADR-0004](0004-keep-app-specific-platform-code-in-app.md) | 应用专属平台代码保留在 App target | Accepted |
 | [ADR-0005](0005-scope-default-actor-isolation-by-target.md) | 按 target 设置默认 actor isolation | Accepted |
 | [ADR-0006](0006-require-apple-silicon.md) | 仅支持 Apple Silicon | Accepted |
+| [ADR-0007](0007-integrate-podpin-as-a-tool.md) | 将 PodPin 作为内置工具迁入 OneBox | Accepted |
 
 - `Proposed`：仍在讨论，不是当前约束。
 - `Accepted`：当前实现必须遵守。

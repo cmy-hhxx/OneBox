@@ -1,6 +1,6 @@
 import AsciiArtTool
-import BlogListenTool
 import OneBoxRuntime
+import PodPinTool
 import StockWatchTool
 import WindowFocusTool
 
@@ -11,7 +11,9 @@ enum AppComposition {
                 deviceProvider: SystemAsciiMetalDeviceProvider()
             ),
             StockWatchModule.registration,
-            BlogListenModule.registration,
+            PodPinModule.makeRegistration(
+                platform: PodPinSystemPlatformAdapter()
+            ),
             WindowFocusModule.registration,
         ])
     }

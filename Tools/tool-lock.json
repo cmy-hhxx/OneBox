@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 2,
+  "minimumMacOS": "14.0",
+  "architecture": "arm64",
+  "cacheDirectory": "Tools/cache",
+  "packageSubdirectory": "Contents/Resources/Tools",
+  "noticesPackageSubdirectory": "Contents/Resources/ThirdPartyNotices/Tools",
+  "distributionCaveat": "The local release pipeline builds FFmpeg and FFprobe from the checksum-verified official source archive with a fixed LGPL-only configuration and packages the locked source archives and notices with the app. It creates an ad-hoc-signed, arm64-only local app bundle; it does not notarize the app or make a legal determination. Anyone distributing it remains responsible for satisfying the licenses, notices, source availability, and any relinking obligations of every bundled component.",
+  "tools": [
+    {
+      "name": "yt-dlp",
+      "version": "2026.07.04",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.07.04/yt-dlp_macos",
+      "sha256": "498bd0dae17855c599d371d68ec5bafc439a9d8640e838be25c765a9792f261b",
+      "cacheFile": "artifacts/yt-dlp_macos",
+      "preparedCacheFile": "artifacts/yt-dlp-arm64",
+      "preparedSha256": "7513e04305dd318856edcdbe9995940e43dab66950ba6726df05f503852b57b0",
+      "packageFile": "yt-dlp",
+      "thinToArm64": true,
+      "license": "Unlicense; bundled PyInstaller dependencies are covered by the shipped THIRD_PARTY_LICENSES.txt (including GPLv3+ components)",
+      "sourceArtifactID": "yt-dlp-source",
+      "legalArtifactIDs": [
+        "yt-dlp-license",
+        "yt-dlp-third-party-licenses"
+      ]
+    },
+    {
+      "name": "ffmpeg",
+      "version": "6.1.1",
+      "sourceBuild": true,
+      "sourceBuildID": "ffmpeg-macos-arm64-lgpl-6.1.1",
+      "sourceArtifactID": "ffmpeg-source-6.1.1",
+      "preparedCacheFile": "artifacts/ffmpeg-6.1.1-arm64",
+      "preparedSha256": "acaac3e74780b7526dd75bd6ec395dff25e5db1efe1e993126a710b5b141567c",
+      "packageFile": "ffmpeg",
+      "buildProduct": "ffmpeg",
+      "license": "LGPL-2.1-or-later; built locally from the pinned official source with the locked configuration",
+      "legalArtifactIDs": [
+        "ffmpeg-lgpl-2.1"
+      ]
+    },
+    {
+      "name": "ffprobe",
+      "version": "6.1.1",
+      "sourceBuild": true,
+      "sourceBuildID": "ffmpeg-macos-arm64-lgpl-6.1.1",
+      "sourceArtifactID": "ffmpeg-source-6.1.1",
+      "preparedCacheFile": "artifacts/ffprobe-6.1.1-arm64",
+      "preparedSha256": "24576696beaeaf27d18a12def6fbfdf95acac4d43756400340711d0ff70100c2",
+      "packageFile": "ffprobe",
+      "buildProduct": "ffprobe",
+      "license": "LGPL-2.1-or-later; built locally from the pinned official source with the locked configuration",
+      "legalArtifactIDs": [
+        "ffmpeg-lgpl-2.1"
+      ]
+    }
+  ],
+  "sourceBuilds": [
+    {
+      "id": "ffmpeg-macos-arm64-lgpl-6.1.1",
+      "sourceArtifactID": "ffmpeg-source-6.1.1",
+      "sourceDirectory": "sources/ffmpeg-6.1.1",
+      "architecture": "arm64",
+      "targetOS": "darwin",
+      "noticeRelativePath": "ffmpeg/BUILD_PROVENANCE.txt",
+      "configureArguments": [
+        "--arch=arm64",
+        "--target-os=darwin",
+        "--cc=/usr/bin/clang",
+        "--ar=/usr/bin/ar",
+        "--ranlib=/usr/bin/ranlib",
+        "--nm=/usr/bin/nm",
+        "--extra-cflags=-mmacosx-version-min=14.0",
+        "--extra-ldflags=-mmacosx-version-min=14.0",
+        "--disable-autodetect",
+        "--disable-gpl",
+        "--disable-version3",
+        "--disable-nonfree",
+        "--disable-shared",
+        "--enable-static",
+        "--disable-debug",
+        "--disable-doc",
+        "--disable-network",
+        "--disable-avdevice",
+        "--disable-postproc",
+        "--disable-indevs",
+        "--disable-outdevs"
+      ],
+      "toolchain": {
+        "xcodeVersion": "26.6",
+        "xcodeBuildVersion": "17F113",
+        "clangVersion": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "macosSDKVersion": "26.5",
+        "macosSDKBuildVersion": "25F70",
+        "makeVersion": "GNU Make 3.81"
+      }
+    }
+  ],
+  "provenanceArtifacts": [
+    {
+      "id": "yt-dlp-source",
+      "kind": "source-archive",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.07.04/yt-dlp.tar.gz",
+      "sha256": "31c32457d1a573a341bb0929386c624fe47339a5338829e6e9c9454bdfa7397a",
+      "cacheFile": "provenance/yt-dlp-2026.07.04.tar.gz",
+      "packageRelativePath": "yt-dlp/yt-dlp-2026.07.04.tar.gz"
+    },
+    {
+      "id": "yt-dlp-license",
+      "kind": "license-text",
+      "url": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.07.04/LICENSE",
+      "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+      "cacheFile": "provenance/yt-dlp-LICENSE",
+      "packageRelativePath": "yt-dlp/LICENSE"
+    },
+    {
+      "id": "yt-dlp-third-party-licenses",
+      "kind": "notice-text",
+      "url": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.07.04/THIRD_PARTY_LICENSES.txt",
+      "sha256": "b085c65586a953cdb4b13c6390d63ec984d66912e4b6a19e66ba3582f2ed104b",
+      "cacheFile": "provenance/yt-dlp-THIRD_PARTY_LICENSES.txt",
+      "packageRelativePath": "yt-dlp/THIRD_PARTY_LICENSES.txt"
+    },
+    {
+      "id": "ffmpeg-source-6.1.1",
+      "kind": "source-archive",
+      "url": "https://ffmpeg.org/releases/ffmpeg-6.1.1.tar.xz",
+      "sha256": "8684f4b00f94b85461884c3719382f1261f0d9eb3d59640a1f4ac0873616f968",
+      "cacheFile": "provenance/ffmpeg-6.1.1.tar.xz",
+      "packageRelativePath": "ffmpeg/ffmpeg-6.1.1.tar.xz"
+    },
+    {
+      "id": "ffmpeg-lgpl-2.1",
+      "kind": "license-text",
+      "url": "https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt",
+      "sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95",
+      "cacheFile": "provenance/LGPL-2.1.txt",
+      "packageRelativePath": "ffmpeg/LGPL-2.1.txt"
+    }
+  ]
+}
