@@ -106,7 +106,7 @@ private final class RecordingStockWatchPlatformClient: StockWatchPlatformClient 
     enum Operation: Equatable {
         case copy(String)
         case reveal(URL)
-        case play(String, String)
+        case play(URL)
         case stop
     }
 
@@ -122,8 +122,8 @@ private final class RecordingStockWatchPlatformClient: StockWatchPlatformClient 
         return true
     }
 
-    func playAlertSound(named resourceName: String, fileExtension: String) -> Bool {
-        operations.append(.play(resourceName, fileExtension))
+    func playAlertSound(at fileURL: URL) -> Bool {
+        operations.append(.play(fileURL))
         return true
     }
 

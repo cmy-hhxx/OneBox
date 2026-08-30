@@ -3,7 +3,7 @@ import OneBoxRuntime
 
 @MainActor
 public enum StockWatchModule {
-    public static let id = ToolID(rawValue: "stock-watch")
+    private static let id = ToolID(rawValue: "stock-watch")
 
     public static func makeRegistration(
         platform: any StockWatchPlatformClient

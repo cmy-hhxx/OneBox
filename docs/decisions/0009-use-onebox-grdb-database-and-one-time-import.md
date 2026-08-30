@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-28
+- Amended by: [ADR-0010](0010-require-package-per-tool-isolation.md)
 
 ## Context
 
@@ -32,7 +33,7 @@
   ```
 
 - SQLite 接缝使用 GRDB，并由 Swift Package Manager 精确固定 7.11.1。该版本使用 MIT 许可证；完整文本记录在 [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md)。
-- Xcode 当前不会把 GRDBSQLite 的 Clang module map 传播给 `StockWatchTool` 静态库。本 ADR 为股票路径新增的 `OTHER_SWIFT_FLAGS` 只放在该 target；PodPin 的既有 GRDB 消费者继续保留各自必要的 module-map 和 explicit-module 设置。标准 check 和 benchmark DerivedData 布局必须覆盖这些 workaround，工具链不再需要时应删除。
+- 本 ADR 接受时，Xcode 不会把 GRDBSQLite 的 Clang module map 传播给 `StockWatchTool` 静态库，因此股票 target 曾使用局部 `OTHER_SWIFT_FLAGS`。ADR-0010 将 StockWatch 迁入独立 package 后，manifest 直接依赖 GRDB 与 GRDBSQLite products，并删除股票路径的 DerivedData 相对 workaround；PodPin 在完成同类 package 迁移前仍保留其必要设置。
 - 数据库以单一 actor/queue 收敛 schema 初始化、查询、写入、迁移、备份和 close。schema 身份、结构、约束和领域数据在进入正常运行前校验。
 - 只有 OneBox 新库不存在且独立应用旧库存在时，才尝试一次导入：
   1. 在打开旧库前确认不存在 `-wal` 或 `-shm`、不存在非空 `-journal`，且数据库头没有声明 WAL 模式；命中任一条件就拒绝导入，要求用户先完全退出 MarketSprite、正常 checkpoint 并切回非 WAL 模式；
@@ -59,4 +60,4 @@
 - 首次迁移会暂时占用新旧两份数据的磁盘空间。
 - 旧库仍处于 WAL 模式或带有活动 sidecar 时，用户必须先让 MarketSprite 完成 checkpoint 并切回非 WAL 模式；OneBox 不会尝试替用户恢复或清理旧库。
 - 迁移后两个应用的数据独立变化，不提供双向同步或再次合并。
-- GRDB 成为股票看盘数据库实现的高删除成本依赖；当前 module-map workaround 还把构建依赖到标准 DerivedData/SourcePackages 相对布局。
+- GRDB 成为股票看盘数据库实现的高删除成本依赖；package manifest 和最终 App 图都必须持续验证 GRDBSQLite 的 module map 与链接结果。

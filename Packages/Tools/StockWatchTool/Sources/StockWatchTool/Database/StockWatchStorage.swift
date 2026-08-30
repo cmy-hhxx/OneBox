@@ -7,7 +7,7 @@ private struct LegacyDatabaseRequiresRecovery: LocalizedError, Sendable {
     }
 }
 
-#if DEBUG
+#if DEBUG || STOCKWATCH_BENCHMARK
     enum StockWatchStorageImportStage: Sendable {
         case snapshotCopied
     }
@@ -36,7 +36,7 @@ struct StockWatchStorage: Sendable {
     private static let backupPagesPerStep: CInt = 32
 
     let applicationSupportDirectory: URL?
-    #if DEBUG
+    #if DEBUG || STOCKWATCH_BENCHMARK
         private let importStageObserverForTesting:
             (@Sendable (StockWatchStorageImportStage) async -> Void)?
     #endif
@@ -47,12 +47,12 @@ struct StockWatchStorage: Sendable {
                 for: .applicationSupportDirectory,
                 in: .userDomainMask
             ).first
-        #if DEBUG
+        #if DEBUG || STOCKWATCH_BENCHMARK
             importStageObserverForTesting = nil
         #endif
     }
 
-    #if DEBUG
+    #if DEBUG || STOCKWATCH_BENCHMARK
         init(
             applicationSupportDirectory: URL,
             importStageObserverForTesting:
@@ -187,7 +187,7 @@ struct StockWatchStorage: Sendable {
             to: temporaryURL,
             cancellationToken: cancellationToken
         )
-        #if DEBUG
+        #if DEBUG || STOCKWATCH_BENCHMARK
             await importStageObserverForTesting?(.snapshotCopied)
         #endif
         try cancellationToken.checkCancellation()

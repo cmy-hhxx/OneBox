@@ -6,12 +6,12 @@ OneBox 是静态注册的模块化单体，见 [ADR-0001](decisions/0001-use-sta
 
 | Module | Package 或源目录 | 职责 | 依赖 |
 | --- | --- | --- | --- |
-| `OneBox` | `OneBox/App` | 应用生命周期、窗口、组合根和生产 adapter；打包许可证、Debug fixture 与股票提醒声音 | Host、Runtime、DesignSystem、全部 Tool、GRDB 链接产品 |
+| `OneBox` | `OneBox/App` | 应用生命周期、窗口、组合根和生产 adapter；打包许可证与 Debug fixture | Host、Runtime、DesignSystem、全部 Tool、GRDB 链接产品 |
 | `OneBoxHost` | `Packages/OneBoxCore/Sources/OneBoxHost` | 侧边栏、选择和内容区域 | Runtime、DesignSystem |
 | `OneBoxRuntime` | `Packages/OneBoxCore/Sources/OneBoxRuntime` | 工具 ID、注册值、目录和应用退出 hook | 无 |
 | `OneBoxDesignSystem` | `Packages/OneBoxCore/Sources/OneBoxDesignSystem` | 颜色、字体和几何 | 无 |
 | `AsciiArtTool` | `Packages/Tools/AsciiArtTool` | ASCII 会话、渲染、资源、导出和 package tests | Runtime、DesignSystem |
-| `StockWatchTool` | `OneBox/Tools/StockWatch` | 行情、自选、提醒、缓存和迁移 | Runtime、DesignSystem、GRDB 7.11.1 |
+| `StockWatchTool` | `Packages/Tools/StockWatchTool` | 行情、自选、提醒、声音资源、缓存、迁移和 package tests | Runtime、DesignSystem、GRDB 7.11.1 |
 | `PodPinTool` | `OneBox/Tools/PodPin` | 音频导入、资料库、下载、队列和播放 | Runtime、DesignSystem、GRDB 7.11.1 |
 
 Runtime 与 Tool module 默认 `nonisolated`；DesignSystem、Host、SwiftUI 入口和可观察状态归 `MainActor`，网络与数据库工作不阻塞主 actor。GRDB 由 Swift Package Manager 精确固定到 7.11.1。移除它需要重写两个工具各自的数据库边界、迁移和并发验证。
@@ -28,7 +28,7 @@ Runtime 与 Tool module 默认 `nonisolated`；DesignSystem、Host、SwiftUI 入
 
 ASCII 工坊通过 `AsciiArtModule.makeRegistration(deviceProvider:)` 接收 `AsciiMetalDeviceProviding`。App 只提供 Metal 设备；解码、会话、渲染和导出留在工具内部。
 
-股票看盘通过 `StockWatchModule.makeRegistration(platform:)` 接收工具定义的 `StockWatchPlatformClient`。该 `@MainActor` 窄接口只有 `copyText(_:)`、`revealDirectory(_:)`、`playAlertSound(named:fileExtension:)` 和 `stopAlertSound()`；`AppComposition` 注入 `MacStockWatchPlatformClient` 作为唯一 AppKit adapter。数据库、provider fallback、缓存和提醒规则留在工具内部。registration 保留既有 `stock-watch` ID 和“股票看盘”名称，不形成旧独立应用的品牌壳或运行入口。
+股票看盘通过 `StockWatchModule.makeRegistration(platform:)` 接收工具定义的 `StockWatchPlatformClient`。该 `@MainActor` 窄接口只有 `copyText(_:)`、`revealDirectory(_:)`、`playAlertSound(at:)` 和 `stopAlertSound()`；package 从 `Bundle.module` 解析自己拥有的 WAV，再把 URL 交给 `MacStockWatchPlatformClient` 播放。数据库、provider fallback、缓存和提醒规则留在工具内部。registration 保留既有 `stock-watch` ID 和“股票看盘”名称，不形成旧独立应用的品牌壳或运行入口。
 
 PodPin 通过 `PodPinModule.makeRegistration(platform:)` 接收工具定义的 `PodPinPlatformProviding`。`PodPinSystemPlatformAdapter` 只提供旧偏好、文件系统和系统媒体播放能力。registration 捕获一个惰性 session；构建 registration 不打开数据库、不联网，也不安装媒体监听器。公开链接适配、GRDB repository、媒体文件、队列和播放进度都留在 `PodPinTool` 内。迁移决定见 [ADR-0007](decisions/0007-integrate-podpin-as-a-tool.md)。
 

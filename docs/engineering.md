@@ -7,7 +7,8 @@
 - 接口或内部格式变化时，同步更新所有当前调用者并删除旧路径。该规则不授权删除已承诺保留的用户数据。
 - 模块用小接口隐藏深实现；第二个真实消费者出现前不提取共享模块。
 - 新依赖只通过 Swift Package Manager 引入，并记录需求、维护状态、许可证和删除成本。
-- Xcode 当前不会稳定传播 GRDBSQLite 的 Clang module map；`project.yml` 只在实际需要的 GRDB 消费者上保留 module-map workaround，PodPin 的部分消费者还需关闭 explicit modules。调整 Xcode、包布局或 DerivedData 路径时必须用标准检查、两个工具测试和股票看盘 benchmark 重新验证，不能扩散到无关 target。
+- `StockWatchTool` manifest 直接依赖 GRDB 与 GRDBSQLite products，SwiftPM 会自然传播 module map，不得复制 DerivedData 相对路径 workaround。PodPin 仍是 Xcode target 期间，`project.yml` 只在它和实际 Swift consumers 上暂留 module-map/explicit-module 设置；PodPin package 集成通过后必须重新验证并删除不再需要的设置。
+- StockWatch Release benchmark 显式启用非默认 `Benchmark` package trait，只为该次测量编译 internal test hooks；最终 App 与普通 Release build 不启用该 trait。
 
 ## Swift
 
@@ -31,7 +32,7 @@
 
 该脚本要求 Apple Silicon，检查 Markdown 链接和 `.swift-format`，生成工程并运行全部测试。ASCII Release 性能与内存基准另运行 `./scripts/benchmark-ascii.sh`；股票看盘 Release 刷新、存储与图表准备基准另运行 `./scripts/benchmark-stock-watch.sh`。
 
-`scripts/test.sh` 先分别构建和测试 `OneBoxCore`、`AsciiArtTool` 两个 Swift package，并保存各自的日志和 JSON coverage；随后将 Xcode `build-for-testing` 与 `test-without-building` 分开，用 `xctest` 直接运行 StockWatch、PodPin 两个无宿主 bundle，再串行运行一个 App-hosted target。Xcode 26.6 启动 macOS test host 时会把中间 `PackageFrameworks` 目录置于搜索路径前方，dyld 可能卡在其中的 GRDB wrapper；其并行 test bundle 载入以及 RPAC/Main Thread Checker 注入也可能卡住。脚本会从生成的 `.xctestrun` 中移除该中间目录和两项注入，使 test host 使用 `OneBox.app` 内已签名的 framework。离线工具打包会移除最终 App 中仅指向构建目录的 rpath。Xcode IDE 的正常运行仍保留这些诊断器。
+`scripts/test.sh` 先分别构建和测试 `OneBoxCore`、`AsciiArtTool`、`StockWatchTool` 三个 Swift package，并保存各自的日志和 JSON coverage；随后将 Xcode `build-for-testing` 与 `test-without-building` 分开，用 `xctest` 直接运行 PodPin 无宿主 bundle，再串行运行一个 App-hosted target。Xcode 26.6 启动 macOS test host 时会把中间 `PackageFrameworks` 目录置于搜索路径前方，dyld 可能卡在其中的 GRDB wrapper；其并行 test bundle 载入以及 RPAC/Main Thread Checker 注入也可能卡住。脚本会从生成的 `.xctestrun` 中移除该中间目录和两项注入，使 test host 使用 `OneBox.app` 内已签名的 framework。离线工具打包会移除最终 App 中仅指向构建目录的 rpath。Xcode IDE 的正常运行仍保留这些诊断器。
 
 | 产物 | 位置 |
 | --- | --- |

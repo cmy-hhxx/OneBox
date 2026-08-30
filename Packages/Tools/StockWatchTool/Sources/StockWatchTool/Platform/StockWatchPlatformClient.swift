@@ -9,7 +9,7 @@ public protocol StockWatchPlatformClient: AnyObject {
     func revealDirectory(_ directory: URL) -> Bool
 
     @discardableResult
-    func playAlertSound(named resourceName: String, fileExtension: String) -> Bool
+    func playAlertSound(at fileURL: URL) -> Bool
 
     func stopAlertSound()
 }

@@ -17,9 +17,9 @@ final class AlertSoundPlayerTests: XCTestCase {
             platform.operations,
             [
                 .stop,
-                .play("bull-moo", "wav"),
+                .play("bull-moo.wav"),
                 .stop,
-                .play("bear-growl", "wav"),
+                .play("bear-growl.wav"),
                 .stop,
             ]
         )
@@ -36,7 +36,7 @@ final class AlertSoundPlayerTests: XCTestCase {
             platform.operations,
             [
                 .stop,
-                .play("bull-moo", "wav"),
+                .play("bull-moo.wav"),
                 .stop,
             ]
         )
@@ -46,7 +46,7 @@ final class AlertSoundPlayerTests: XCTestCase {
 @MainActor
 private final class SoundPlatformProbe: StockWatchPlatformClient {
     enum Operation: Equatable {
-        case play(String, String)
+        case play(String)
         case stop
     }
 
@@ -55,8 +55,8 @@ private final class SoundPlatformProbe: StockWatchPlatformClient {
     func copyText(_ text: String) -> Bool { true }
     func revealDirectory(_ directory: URL) -> Bool { true }
 
-    func playAlertSound(named resourceName: String, fileExtension: String) -> Bool {
-        operations.append(.play(resourceName, fileExtension))
+    func playAlertSound(at fileURL: URL) -> Bool {
+        operations.append(.play(fileURL.lastPathComponent))
         return true
     }
 

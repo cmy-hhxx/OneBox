@@ -76,9 +76,12 @@ final class ReviewMarkerLayoutTests: XCTestCase {
         }
     }
 
-    func testAlertSoundResourceNamesMatchBundledFiles() {
-        XCTAssertEqual(AlertSoundPlayer.resourceName(for: .rising), "bull-moo")
-        XCTAssertEqual(AlertSoundPlayer.resourceName(for: .falling), "bear-growl")
+    func testAlertSoundResourcesAreBundled() throws {
+        let risingURL = try XCTUnwrap(AlertSoundPlayer.resourceURL(for: .rising))
+        let fallingURL = try XCTUnwrap(AlertSoundPlayer.resourceURL(for: .falling))
+
+        XCTAssertEqual(risingURL.lastPathComponent, "bull-moo.wav")
+        XCTAssertEqual(fallingURL.lastPathComponent, "bear-growl.wav")
     }
 
     func testStorageStatusTakesPriorityOverSourceStatus() {

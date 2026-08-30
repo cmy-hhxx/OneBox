@@ -3,7 +3,7 @@ import Foundation
 import OSLog
 import Observation
 
-#if DEBUG
+#if DEBUG || STOCKWATCH_BENCHMARK
     enum AlertSettingsPersistenceEvent: Sendable, Equatable {
         case committed(AlertSettingsSnapshot, Int)
         case finished(AlertSettingsSnapshot, Int)
@@ -92,7 +92,7 @@ final class MonitorStore: ObservableObject {
     private var alertSettingsRevision = 0
     private var lastPersistedAlertSettings = AlertSettingsSnapshot.default
     private var lastPersistedAlertSettingsRevision = 0
-    #if DEBUG
+    #if DEBUG || STOCKWATCH_BENCHMARK
         var alertSettingsPersistenceEventObserverForTesting:
             (
                 @MainActor @Sendable (AlertSettingsPersistenceEvent) async -> Void
@@ -990,7 +990,7 @@ final class MonitorStore: ObservableObject {
             let predecessor = alertSettingsPersistenceTask
             alertSettingsPersistenceTask = nil
             predecessor?.cancel()
-            #if DEBUG
+            #if DEBUG || STOCKWATCH_BENCHMARK
                 if let predecessor {
                     await alertSettingsPersistenceEventObserverForTesting?(
                         .flushAwaitingLineage(currentAlertSettings, revision)
@@ -1055,7 +1055,7 @@ final class MonitorStore: ObservableObject {
     ) async -> String? {
         do {
             try await database.saveAlertSettings(snapshot)
-            #if DEBUG
+            #if DEBUG || STOCKWATCH_BENCHMARK
                 await alertSettingsPersistenceEventObserverForTesting?(
                     .committed(snapshot, revision)
                 )
@@ -1065,7 +1065,7 @@ final class MonitorStore: ObservableObject {
                 lastPersistedAlertSettingsRevision = revision
             }
             guard revision == alertSettingsRevision else {
-                #if DEBUG
+                #if DEBUG || STOCKWATCH_BENCHMARK
                     if reportsScheduledCompletion {
                         await alertSettingsPersistenceEventObserverForTesting?(
                             .finished(snapshot, revision)
@@ -1076,7 +1076,7 @@ final class MonitorStore: ObservableObject {
             }
             alertSettingsPersistenceTask = nil
             clearStorageError(context: .alertSettings)
-            #if DEBUG
+            #if DEBUG || STOCKWATCH_BENCHMARK
                 if reportsScheduledCompletion {
                     await alertSettingsPersistenceEventObserverForTesting?(
                         .finished(snapshot, revision)
@@ -1127,7 +1127,7 @@ final class MonitorStore: ObservableObject {
             return rejected
         }
         defer { finishOperationAdmission() }
-        #if DEBUG
+        #if DEBUG || STOCKWATCH_BENCHMARK
             await operationAdmissionObserverForTesting?(operationKind)
         #endif
         return await operation()
@@ -1142,7 +1142,7 @@ final class MonitorStore: ObservableObject {
             throw MonitorStoreOperationError.unavailable
         }
         defer { finishOperationAdmission() }
-        #if DEBUG
+        #if DEBUG || STOCKWATCH_BENCHMARK
             await operationAdmissionObserverForTesting?(operationKind)
         #endif
         return try await operation()

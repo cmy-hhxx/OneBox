@@ -1,3 +1,5 @@
+import Foundation
+
 @MainActor
 protocol AlertSoundPlaying: AnyObject {
     func play(_ direction: AlertDirection, isEnabled: Bool)
@@ -12,26 +14,33 @@ final class AlertSoundPlayer: AlertSoundPlaying {
         self.platform = platform
     }
 
-    nonisolated static func resourceName(for direction: AlertDirection) -> String {
+    nonisolated static func resourceURL(for direction: AlertDirection) -> URL? {
+        Bundle.module.url(
+            forResource: resourceName(for: direction),
+            withExtension: "wav"
+        )
+    }
+
+    func play(_ direction: AlertDirection, isEnabled: Bool) {
+        platform.stopAlertSound()
+        guard
+            isEnabled,
+            let fileURL = Self.resourceURL(for: direction)
+        else { return }
+        platform.playAlertSound(at: fileURL)
+    }
+
+    func stop() {
+        platform.stopAlertSound()
+    }
+
+    private nonisolated static func resourceName(for direction: AlertDirection) -> String {
         switch direction {
         case .rising:
             "bull-moo"
         case .falling:
             "bear-growl"
         }
-    }
-
-    func play(_ direction: AlertDirection, isEnabled: Bool) {
-        platform.stopAlertSound()
-        guard isEnabled else { return }
-        platform.playAlertSound(
-            named: Self.resourceName(for: direction),
-            fileExtension: "wav"
-        )
-    }
-
-    func stop() {
-        platform.stopAlertSound()
     }
 }
 

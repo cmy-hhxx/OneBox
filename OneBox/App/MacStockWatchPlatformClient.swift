@@ -14,21 +14,16 @@ final class MacStockWatchPlatformClient: StockWatchPlatformClient {
         NSWorkspace.shared.open(directory)
     }
 
-    func playAlertSound(named resourceName: String, fileExtension: String) -> Bool {
-        guard
-            let url = Bundle.main.url(
-                forResource: resourceName,
-                withExtension: fileExtension
-            )
-        else {
+    func playAlertSound(at fileURL: URL) -> Bool {
+        currentSound?.stop()
+        guard let sound = NSSound(contentsOf: fileURL, byReference: true) else {
+            currentSound = nil
             NSSound.beep()
             return false
         }
-
-        currentSound?.stop()
-        currentSound = NSSound(contentsOf: url, byReference: true)
-        currentSound?.volume = 0.82
-        return currentSound?.play() ?? false
+        sound.volume = 0.82
+        currentSound = sound
+        return sound.play()
     }
 
     func stopAlertSound() {

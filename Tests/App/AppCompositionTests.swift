@@ -42,8 +42,19 @@ final class AppCompositionTests: XCTestCase {
         XCTAssertNotNil(
             asciiBundle.url(forResource: "onebox-mark-light", withExtension: "png")
         )
-        XCTAssertNotNil(Bundle.main.url(forResource: "bull-moo", withExtension: "wav"))
-        XCTAssertNotNil(Bundle.main.url(forResource: "bear-growl", withExtension: "wav"))
+        let stockWatchBundleURL = try XCTUnwrap(
+            Bundle.main.url(
+                forResource: "StockWatchTool_StockWatchTool",
+                withExtension: "bundle"
+            )
+        )
+        let stockWatchBundle = try XCTUnwrap(Bundle(url: stockWatchBundleURL))
+        XCTAssertNotNil(
+            stockWatchBundle.url(forResource: "bull-moo", withExtension: "wav")
+        )
+        XCTAssertNotNil(
+            stockWatchBundle.url(forResource: "bear-growl", withExtension: "wav")
+        )
         XCTAssertNotNil(Bundle.main.url(forResource: "GRDB-MIT", withExtension: "txt"))
         XCTAssertNotNil(
             Bundle.main.url(forResource: "THIRD_PARTY_NOTICES", withExtension: "md")

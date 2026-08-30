@@ -108,6 +108,10 @@ set -o pipefail
         run_swift_package_tests \
             AsciiArtTool \
             "$repository_root/Packages/Tools/AsciiArtTool"
+        run_swift_package_tests \
+            StockWatchTool \
+            "$repository_root/Packages/Tools/StockWatchTool" \
+            --filter 'StockWatchToolTests\.'
     fi
 
     xcodebuild \
@@ -167,7 +171,6 @@ set -o pipefail
 
     if [[ "$test_mode" == "default" ]]; then
         hostless_test_targets=(
-            StockWatchToolTests
             PodPinToolTests
         )
         hosted_test_targets=(OneBoxAppTests)

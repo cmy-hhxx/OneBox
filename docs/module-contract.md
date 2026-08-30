@@ -10,7 +10,7 @@ ToolRegistration(id: id, displayName: name) {
 
 注册值包含 ID、展示名称、SwiftUI 内容构造方式和默认 no-op 的应用退出清理方式。无依赖工具可以公开静态 registration；需要平台能力或配置时，公开窄 `makeRegistration(...)` factory，并在工具内部组装状态和实现。注册过程不得执行业务 I/O、安装监听器或提前创建昂贵资源；退出 hook 只由 App 在确认退出时调用。
 
-股票看盘使用 `StockWatchModule.makeRegistration(platform:)`。工具定义的 `@MainActor StockWatchPlatformClient` 只有 `copyText(_:)`、`revealDirectory(_:)`、`playAlertSound(named:fileExtension:)` 和 `stopAlertSound()`；App 的 `MacStockWatchPlatformClient` 提供唯一 AppKit adapter。网络、数据库和领域状态不放进 platform 接口，也不由 Host 管理。其可见内容离屏时排空持久化并关库；应用在内容仍可见时退出，则由 registration hook 请求同一个幂等 shutdown。只有媒体 session 可以在离屏后继续用户已明确启动的播放或下载。
+股票看盘使用 `StockWatchModule.makeRegistration(platform:)`。工具定义的 `@MainActor StockWatchPlatformClient` 只有 `copyText(_:)`、`revealDirectory(_:)`、`playAlertSound(at:)` 和 `stopAlertSound()`；工具从自己的 package bundle 解析提醒声音 URL，App 的 `MacStockWatchPlatformClient` 只提供唯一 AppKit 播放 adapter。网络、数据库和领域状态不放进 platform 接口，也不由 Host 管理。其可见内容离屏时排空持久化并关库；应用在内容仍可见时退出，则由 registration hook 请求同一个幂等 shutdown。只有媒体 session 可以在离屏后继续用户已明确启动的播放或下载。
 
 ## 边界与生命周期
 
