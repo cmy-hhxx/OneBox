@@ -20,6 +20,27 @@ for command in jq shasum file lipo ditto chmod mkdir rm rg awk otool tail tr cod
   fi
 done
 
+verify_no_entitlements() {
+  local code_path="$1"
+  local entitlements_dump
+  entitlements_dump="$(mktemp /tmp/onebox-app-entitlements.XXXXXX)"
+  if ! codesign --display --entitlements "$entitlements_dump" --xml "$code_path" \
+      >/dev/null 2>&1
+  then
+    rm -f "$entitlements_dump"
+    printf 'unable to inspect app entitlements: %s\n' "$code_path" >&2
+    exit 1
+  fi
+  if [[ -s "$entitlements_dump" ]] \
+      && ! plutil -convert json -o - "$entitlements_dump" | jq -e 'length == 0' >/dev/null
+  then
+    rm -f "$entitlements_dump"
+    printf 'Release app must not contain code-signing entitlements: %s\n' "$code_path" >&2
+    exit 1
+  fi
+  rm -f "$entitlements_dump"
+}
+
 app_path="$1"
 lock_file="$repo_root/Tools/tool-lock.json"
 yt_dlp_entitlements="$repo_root/Tools/yt-dlp.entitlements.plist"
@@ -41,6 +62,13 @@ app_executable="$app_path/Contents/MacOS/OneBox"
   printf 'OneBox app must be an arm64-only executable: %s\n' "$app_executable" >&2
   exit 1
 }
+if otool -l "$app_executable" \
+    | rg -q 'segname __LLVM_COV|sectname __llvm_(covmap|prf_)'
+then
+  printf 'Release app must not contain LLVM coverage instrumentation: %s\n' "$app_executable" >&2
+  exit 1
+fi
+verify_no_entitlements "$app_path"
 [[ -f "$lock_file" ]] || { printf 'missing tool lock: %s\n' "$lock_file" >&2; exit 1; }
 [[ -f "$yt_dlp_entitlements" ]] || {
   printf 'missing yt-dlp signing entitlements: %s\n' "$yt_dlp_entitlements" >&2
@@ -403,11 +431,9 @@ while IFS= read -r tool_name; do
   fi
 done < <(jq -r '.tools[].packageFile' "$lock_file")
 
-# Re-sign the outer bundle after its nested executables. Keep any entitlements
-# already carried by the Xcode-built app while explicitly replacing its flags.
-# Deep signing also repairs other nested code in the Release product.
-codesign --force --deep --sign - --timestamp=none --options runtime \
-  --preserve-metadata=entitlements "$app_path"
+# Re-sign the outer bundle after its nested executables. The Release app is
+# required to carry no entitlements; deep signing also repairs nested code.
+codesign --force --deep --sign - --timestamp=none --options runtime "$app_path"
 if otool -l "$app_executable" | awk '$1 == "path" && $2 ~ /^\// && $2 ~ /\/PackageFrameworks$/ { found = 1 } END { exit !found }'; then
   printf 'app binary retains a non-relocatable package rpath: %s\n' "$app_executable" >&2
   exit 1
@@ -420,6 +446,7 @@ while IFS=$'\t' read -r tool_name version; do
   fi
 done < <(jq -r '.tools[] | [.packageFile, .version] | @tsv' "$lock_file")
 verify_runtime_signature "$app_path"
+verify_no_entitlements "$app_path"
 codesign --verify --deep --strict --verbose=2 "$app_path"
 
 printf 'Packaged and signed verified PodPin tools into %s\n' "$tool_destination"

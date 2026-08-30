@@ -17,8 +17,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ## GRDB.swift
 
 [GRDB.swift](https://github.com/groue/GRDB.swift), exact version 7.11.1, provides
-StockWatch and PodPin SQLite access under the MIT License. The license is stored
-at [`Licenses/GRDB-MIT.txt`](Licenses/GRDB-MIT.txt) and copied into packaged apps.
+StockWatch and PodPin SQLite access under the MIT License. The repository copy is
+`Licenses/GRDB-MIT.txt`; packaged apps include the same text as `GRDB-MIT.txt`
+and `ThirdPartyNotices/GRDB/LICENSE`.
 
 MIT License
 
@@ -72,7 +73,8 @@ PodPin offline downloads use checksum-locked `yt-dlp`, `ffmpeg`, and `ffprobe`
 only after `scripts/fetch-podpin-tools.sh` verifies their declared sources and
 `scripts/package-podpin-tools.sh` verifies, copies, signs, and re-signs the app.
 Exact versions, URLs, hashes, source-build configuration, and notice paths are
-recorded in [`Tools/tool-lock.json`](Tools/tool-lock.json).
+recorded in the repository file `Tools/tool-lock.json`. Packaged apps carry its
+lock-derived sources, licenses, and build provenance under `ThirdPartyNotices/Tools`.
 
 - `yt-dlp` is distributed with its upstream license, third-party notices, and
   matching source archive.

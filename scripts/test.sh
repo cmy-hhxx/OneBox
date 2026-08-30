@@ -129,6 +129,7 @@ set -o pipefail
             -configuration Debug \
             -destination "platform=macOS,arch=$host_architecture" \
             -derivedDataPath "$artifact_root/DerivedData" \
+            -enableCodeCoverage YES \
             build-for-testing
 
         xctestrun_files=("$products_root"/OneBox_*.xctestrun(N))

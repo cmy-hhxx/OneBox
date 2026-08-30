@@ -12,6 +12,7 @@ settings:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
     DEAD_CODE_STRIPPING: true
+    ENABLE_CODE_COVERAGE: false
 
 packages:
   OneBoxCore:
@@ -60,6 +61,7 @@ targets:
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
       configs:
         Release:
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: false
           EXCLUDED_SOURCE_FILE_NAMES: podpin-sample.m4a
 
   OneBoxAppTests:
@@ -85,6 +87,6 @@ schemes:
         OneBox: all
         OneBoxAppTests: [test]
     test:
-      gatherCoverageData: true
+      gatherCoverageData: false
       targets:
         - OneBoxAppTests
