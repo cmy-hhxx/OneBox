@@ -5,7 +5,8 @@ import StockWatchTool
 
 enum AppComposition {
     static func makeCatalog() -> ToolCatalog {
-        ToolCatalog(registrations: [
+        let podPinPlatform = PodPinSystemPlatformAdapter()
+        return ToolCatalog(registrations: [
             AsciiArtModule.makeRegistration(
                 deviceProvider: SystemAsciiMetalDeviceProvider()
             ),
@@ -13,7 +14,9 @@ enum AppComposition {
                 platform: MacStockWatchPlatformClient()
             ),
             PodPinModule.makeRegistration(
-                platform: PodPinSystemPlatformAdapter()
+                platform: podPinPlatform,
+                debugFixtureAudioURL: podPinPlatform.debugFixtureAudioURL,
+                externalToolsDirectoryURL: podPinPlatform.externalToolsDirectoryURL
             ),
         ])
     }

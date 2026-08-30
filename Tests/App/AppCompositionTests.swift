@@ -29,6 +29,8 @@ final class AppCompositionTests: XCTestCase {
         XCTAssertTrue(adapter.nowPlayingInfoCenter === MPNowPlayingInfoCenter.default())
         let playerItem = AVPlayerItem(url: URL(fileURLWithPath: "/dev/null"))
         XCTAssertTrue(adapter.makeAudioPlayer(item: playerItem).currentItem === playerItem)
+        XCTAssertEqual(adapter.debugFixtureAudioURL?.lastPathComponent, "podpin-sample.m4a")
+        XCTAssertEqual(adapter.externalToolsDirectoryURL?.lastPathComponent, "Tools")
     }
 
     func testToolResourcesAndThirdPartyNoticesAreBundled() throws {
@@ -54,6 +56,20 @@ final class AppCompositionTests: XCTestCase {
         )
         XCTAssertNotNil(
             stockWatchBundle.url(forResource: "bear-growl", withExtension: "wav")
+        )
+        let fixtureURL = try XCTUnwrap(
+            Bundle.main.url(forResource: "podpin-sample", withExtension: "m4a")
+        )
+        let resourceRoot = try XCTUnwrap(Bundle.main.resourceURL)
+        let resourceFiles = try XCTUnwrap(
+            FileManager.default.enumerator(
+                at: resourceRoot,
+                includingPropertiesForKeys: nil
+            )?.allObjects as? [URL]
+        )
+        XCTAssertEqual(
+            resourceFiles.filter { $0.lastPathComponent == fixtureURL.lastPathComponent }.count,
+            1
         )
         XCTAssertNotNil(Bundle.main.url(forResource: "GRDB-MIT", withExtension: "txt"))
         XCTAssertNotNil(

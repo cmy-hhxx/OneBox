@@ -7,15 +7,15 @@
 - 接口或内部格式变化时，同步更新所有当前调用者并删除旧路径。该规则不授权删除已承诺保留的用户数据。
 - 模块用小接口隐藏深实现；第二个真实消费者出现前不提取共享模块。
 - 新依赖只通过 Swift Package Manager 引入，并记录需求、维护状态、许可证和删除成本。
-- `StockWatchTool` manifest 直接依赖 GRDB 与 GRDBSQLite products，SwiftPM 会自然传播 module map，不得复制 DerivedData 相对路径 workaround。PodPin 仍是 Xcode target 期间，`project.yml` 只在它和实际 Swift consumers 上暂留 module-map/explicit-module 设置；PodPin package 集成通过后必须重新验证并删除不再需要的设置。
-- StockWatch Release benchmark 显式启用非默认 `Benchmark` package trait，只为该次测量编译 internal test hooks；最终 App 与普通 Release build 不启用该 trait。
+- `StockWatchTool` 与 `PodPinTool` manifest 分别直接依赖 GRDB 与 GRDBSQLite products，SwiftPM 会自然传播 module map；`project.yml` 和 App consumers 不得复制 DerivedData 相对路径 workaround 或禁用 explicit modules。
+- StockWatch Release benchmark 显式启用非默认 `Benchmark` package trait；PodPin 完整 Release tests 显式启用非默认 `Testing` trait。两者只为对应验证编译 internal test hooks，最终 App 与普通 Release build 都不启用这些 traits。
 
 ## Swift
 
 - App、Host 和 DesignSystem 默认隔离到 `MainActor`；Runtime 与 Tool 默认 `nonisolated`，UI 入口显式标记 `@MainActor`。
 - 禁止全局可变业务状态。异步任务必须有 owner、取消点和超时，不在主线程执行阻塞 I/O。
 - 使用类型化错误；代码标识符和提交消息使用英文，注释只解释约束和原因。
-- 每个 `Package.swift` 是对应 package 内 target、依赖、资源和 Swift 设置的配置源；`project.yml` 是 App 组装、签名、App-hosted 测试与剩余 Xcode target 的配置源。生成文件必须有可复现命令。
+- 每个 `Package.swift` 是对应 package 内 target、依赖、资源和 Swift 设置的配置源；`project.yml` 只管理 App 组装、平台 adapter、签名、发行资源和 App-hosted 测试。生成文件必须有可复现命令。
 
 ## 验证
 
@@ -32,7 +32,7 @@
 
 该脚本要求 Apple Silicon，检查 Markdown 链接和 `.swift-format`，生成工程并运行全部测试。ASCII Release 性能与内存基准另运行 `./scripts/benchmark-ascii.sh`；股票看盘 Release 刷新、存储与图表准备基准另运行 `./scripts/benchmark-stock-watch.sh`。
 
-`scripts/test.sh` 先分别构建和测试 `OneBoxCore`、`AsciiArtTool`、`StockWatchTool` 三个 Swift package，并保存各自的日志和 JSON coverage；随后将 Xcode `build-for-testing` 与 `test-without-building` 分开，用 `xctest` 直接运行 PodPin 无宿主 bundle，再串行运行一个 App-hosted target。Xcode 26.6 启动 macOS test host 时会把中间 `PackageFrameworks` 目录置于搜索路径前方，dyld 可能卡在其中的 GRDB wrapper；其并行 test bundle 载入以及 RPAC/Main Thread Checker 注入也可能卡住。脚本会从生成的 `.xctestrun` 中移除该中间目录和两项注入，使 test host 使用 `OneBox.app` 内已签名的 framework。离线工具打包会移除最终 App 中仅指向构建目录的 rpath。Xcode IDE 的正常运行仍保留这些诊断器。
+`scripts/test.sh` 分别构建和测试 `OneBoxCore`、`AsciiArtTool`、`StockWatchTool`、`PodPinTool` 四个 Swift package，并保存各自的日志和 JSON coverage；默认模式随后将 Xcode `build-for-testing` 与 `test-without-building` 分开，只串行运行 App-hosted target。两个 PodPin live 模式把 opt-in flags 和锁定媒体工具路径直接导出给 SwiftPM test 进程，不修改 `.xctestrun`，并保留 package coverage。Xcode 26.6 启动 macOS test host 时会把中间 `PackageFrameworks` 目录置于搜索路径前方，dyld 可能卡在其中的 GRDB wrapper；其并行 test bundle 载入以及 RPAC/Main Thread Checker 注入也可能卡住。脚本会从生成的 `.xctestrun` 中移除该中间目录和两项注入，使 test host 使用 `OneBox.app` 内已签名的 framework。离线工具打包会移除最终 App 中仅指向构建目录的 rpath。Xcode IDE 的正常运行仍保留这些诊断器。
 
 | 产物 | 位置 |
 | --- | --- |

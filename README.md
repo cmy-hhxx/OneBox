@@ -57,6 +57,12 @@ open OneBox.xcodeproj
 ./scripts/benchmark-ascii.sh # Release ASCII 导出与内存基准
 ./scripts/benchmark-stock-watch.sh # Release 股票看盘刷新、存储与图表准备基准
 
+# 每个 package 也可从自己的根目录独立运行 Debug/Release build 与 test：
+cd Packages/Tools/PodPinTool
+xcrun swift build && xcrun swift test
+xcrun swift build -c release && xcrun swift test -c release --traits Testing
+cd ../../..
+
 # 显式运行 PodPin 真实公开链接/下载测试：
 ./scripts/test.sh --podpin-live
 ./scripts/test.sh --podpin-live-downloads # 先按 lock 获取、重建并验证媒体工具
@@ -76,7 +82,7 @@ xcodebuild -project OneBox.xcodeproj -scheme OneBox -configuration Release \
 | --- | --- | --- | --- | --- |
 | [GRDB](https://github.com/groue/GRDB.swift) | 股票看盘和 PodPin 的 SQLite 访问、schema、迁移与事务 | Swift Package Manager 精确固定 7.11.1；升级时重新运行两个工具的数据库、迁移和并发验证 | MIT | 必须重写两个工具各自的数据库边界、迁移与并发验证 |
 
-每个本地 package 的 `Package.swift` 管理自己的 target、依赖、资源和 Swift 设置；`project.yml` 管理 OneBox App、最终 product 组装、签名以及尚未迁移的 Xcode target。生成的 Xcode 工程和 `.build/`、`dist/` 不进入版本库。完整许可证见[第三方声明](THIRD_PARTY_NOTICES.md)。
+每个本地 package 的 `Package.swift` 管理自己的 target、依赖、资源和 Swift 设置；`project.yml` 只管理 OneBox App、平台 adapter、最终 product 组装、签名、发行资源和 App-hosted 验证。生成的 Xcode 工程和 `.build/`、`dist/` 不进入版本库。完整许可证见[第三方声明](THIRD_PARTY_NOTICES.md)。
 
 ## 文档
 

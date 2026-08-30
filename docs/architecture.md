@@ -6,17 +6,17 @@ OneBox 是静态注册的模块化单体，见 [ADR-0001](decisions/0001-use-sta
 
 | Module | Package 或源目录 | 职责 | 依赖 |
 | --- | --- | --- | --- |
-| `OneBox` | `OneBox/App` | 应用生命周期、窗口、组合根和生产 adapter；打包许可证与 Debug fixture | Host、Runtime、DesignSystem、全部 Tool、GRDB 链接产品 |
+| `OneBox` | `OneBox/App` | 应用生命周期、窗口、组合根和生产 adapter；打包许可证、Debug fixture 与外部工具 | Host、Runtime、DesignSystem、全部 Tool |
 | `OneBoxHost` | `Packages/OneBoxCore/Sources/OneBoxHost` | 侧边栏、选择和内容区域 | Runtime、DesignSystem |
 | `OneBoxRuntime` | `Packages/OneBoxCore/Sources/OneBoxRuntime` | 工具 ID、注册值、目录和应用退出 hook | 无 |
 | `OneBoxDesignSystem` | `Packages/OneBoxCore/Sources/OneBoxDesignSystem` | 颜色、字体和几何 | 无 |
 | `AsciiArtTool` | `Packages/Tools/AsciiArtTool` | ASCII 会话、渲染、资源、导出和 package tests | Runtime、DesignSystem |
 | `StockWatchTool` | `Packages/Tools/StockWatchTool` | 行情、自选、提醒、声音资源、缓存、迁移和 package tests | Runtime、DesignSystem、GRDB 7.11.1 |
-| `PodPinTool` | `OneBox/Tools/PodPin` | 音频导入、资料库、下载、队列和播放 | Runtime、DesignSystem、GRDB 7.11.1 |
+| `PodPinTool` | `Packages/Tools/PodPinTool` | 音频导入、资料库、下载、队列、播放和 package tests | Runtime、DesignSystem、GRDB 7.11.1 |
 
 Runtime 与 Tool module 默认 `nonisolated`；DesignSystem、Host、SwiftUI 入口和可观察状态归 `MainActor`，网络与数据库工作不阻塞主 actor。GRDB 由 Swift Package Manager 精确固定到 7.11.1。移除它需要重写两个工具各自的数据库边界、迁移和并发验证。
 
-每个 `Package.swift` 定义 package 内依赖、资源和编译设置；`project.yml` 定义 App 组装、签名、App-hosted tests 和尚未迁移的 Xcode target。当前边界见 [ADR-0010](decisions/0010-require-package-per-tool-isolation.md) 和 [ADR-0004](decisions/0004-keep-app-specific-platform-code-in-app.md)；原 Xcode-target 决定 [ADR-0003](decisions/0003-enforce-module-dependencies-with-targets.md) 已被取代。
+每个 `Package.swift` 定义 package 内依赖、资源和编译设置；`project.yml` 只定义最终 App 组装、签名、发行资源和 App-hosted tests。当前边界见 [ADR-0010](decisions/0010-require-package-per-tool-isolation.md) 和 [ADR-0004](decisions/0004-keep-app-specific-platform-code-in-app.md)；原 Xcode-target 决定 [ADR-0003](decisions/0003-enforce-module-dependencies-with-targets.md) 已被取代。
 
 ## 边界
 
@@ -30,7 +30,7 @@ ASCII 工坊通过 `AsciiArtModule.makeRegistration(deviceProvider:)` 接收 `As
 
 股票看盘通过 `StockWatchModule.makeRegistration(platform:)` 接收工具定义的 `StockWatchPlatformClient`。该 `@MainActor` 窄接口只有 `copyText(_:)`、`revealDirectory(_:)`、`playAlertSound(at:)` 和 `stopAlertSound()`；package 从 `Bundle.module` 解析自己拥有的 WAV，再把 URL 交给 `MacStockWatchPlatformClient` 播放。数据库、provider fallback、缓存和提醒规则留在工具内部。registration 保留既有 `stock-watch` ID 和“股票看盘”名称，不形成旧独立应用的品牌壳或运行入口。
 
-PodPin 通过 `PodPinModule.makeRegistration(platform:)` 接收工具定义的 `PodPinPlatformProviding`。`PodPinSystemPlatformAdapter` 只提供旧偏好、文件系统和系统媒体播放能力。registration 捕获一个惰性 session；构建 registration 不打开数据库、不联网，也不安装媒体监听器。公开链接适配、GRDB repository、媒体文件、队列和播放进度都留在 `PodPinTool` 内。迁移决定见 [ADR-0007](decisions/0007-integrate-podpin-as-a-tool.md)。
+PodPin 通过 `PodPinModule.makeRegistration(platform:debugFixtureAudioURL:externalToolsDirectoryURL:)` 接收工具定义的 `PodPinPlatformProviding` 和两个显式资源 URL。`PodPinSystemPlatformAdapter` 提供旧偏好、文件系统和系统媒体播放能力，并由 App adapter 独占 `Bundle.main` 中 Debug fixture 与最终 `Tools` 目录的发现。package 的测试 helper 通过 `Bundle.module` 读取自己的 fixture；production target 不声明该资源，Release App 也不复制它。工具 locator 只接受注入目录或测试 override，并在运行前确认候选存在且可执行，不读取宿主 Bundle 或环境变量。registration 捕获一个惰性 session；构建 registration 不打开数据库、不联网，也不安装媒体监听器。公开链接适配、GRDB repository、媒体文件、队列和播放进度都留在 `PodPinTool` 内。迁移决定见 [ADR-0007](decisions/0007-integrate-podpin-as-a-tool.md)。
 
 ## 生命周期
 

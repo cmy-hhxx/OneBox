@@ -20,36 +20,10 @@ packages:
     path: Packages/Tools/AsciiArtTool
   StockWatchTool:
     path: Packages/Tools/StockWatchTool
-  GRDB:
-    url: https://github.com/groue/GRDB.swift.git
-    exactVersion: 7.11.1
+  PodPinTool:
+    path: Packages/Tools/PodPinTool
 
 targets:
-  PodPinTool:
-    type: library.static
-    platform: macOS
-    sources:
-      - path: OneBox/Tools/PodPin
-        excludes:
-          - Resources/Fixtures/README.md
-          - Resources/Fixtures/podpin-sample.m4a
-          - Resources/Tools/README.md
-    dependencies:
-      - package: OneBoxCore
-        product: OneBoxRuntime
-      - package: OneBoxCore
-        product: OneBoxDesignSystem
-      - package: GRDB
-      - package: GRDB
-        product: GRDBSQLite
-    # Xcode 26.6 does not propagate GRDBSQLite's Clang module map through a
-    # static target. Keep these flags on PodPinTool and its Swift consumers.
-    settings:
-      base:
-        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
-        SWIFT_ENABLE_EXPLICIT_MODULES: NO
-        OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -fmodule-map-file=$(BUILD_DIR)/../../SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap"
-
   OneBox:
     type: application
     platform: macOS
@@ -59,7 +33,7 @@ targets:
         buildPhase: resources
       - path: Licenses/GRDB-MIT.txt
         buildPhase: resources
-      - path: OneBox/Tools/PodPin/Resources/Fixtures/podpin-sample.m4a
+      - path: Packages/Tools/PodPinTool/Tests/PodPinToolTests/Resources/Fixtures/podpin-sample.m4a
         buildPhase: resources
     dependencies:
       - package: OneBoxCore
@@ -70,10 +44,8 @@ targets:
         product: OneBoxHost
       - package: StockWatchTool
         product: StockWatchTool
-      - target: PodPinTool
-      - package: GRDB
-      - package: GRDB
-        product: GRDBSQLite
+      - package: PodPinTool
+        product: PodPinTool
       - package: AsciiArtTool
         product: AsciiArtTool
     settings:
@@ -86,8 +58,6 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
         ENABLE_HARDENED_RUNTIME: true
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
-        SWIFT_ENABLE_EXPLICIT_MODULES: NO
-        OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -fmodule-map-file=$(BUILD_DIR)/../../SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap"
       configs:
         Release:
           EXCLUDED_SOURCE_FILE_NAMES: podpin-sample.m4a
@@ -102,36 +72,11 @@ targets:
     settings:
       base:
         SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
-        SWIFT_ENABLE_EXPLICIT_MODULES: NO
-        OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -fmodule-map-file=$(BUILD_DIR)/../../SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap"
         PRODUCT_BUNDLE_IDENTIFIER: com.cmy.OneBoxAppTests
         GENERATE_INFOPLIST_FILE: true
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/OneBox.app/Contents/MacOS/OneBox"
 
-  PodPinToolTests:
-    type: bundle.unit-test
-    platform: macOS
-    sources:
-      - path: Tests/PodPin
-      - path: OneBox/Tools/PodPin/Resources/Fixtures/podpin-sample.m4a
-        buildPhase: resources
-    dependencies:
-      - target: PodPinTool
-      - package: OneBoxCore
-        product: OneBoxRuntime
-      - package: OneBoxCore
-        product: OneBoxDesignSystem
-      - package: GRDB
-      - package: GRDB
-        product: GRDBSQLite
-    settings:
-      base:
-        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
-        SWIFT_ENABLE_EXPLICIT_MODULES: NO
-        OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -fmodule-map-file=$(BUILD_DIR)/../../SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap"
-        PRODUCT_BUNDLE_IDENTIFIER: com.cmy.PodPinToolTests
-        GENERATE_INFOPLIST_FILE: true
 
 schemes:
   OneBox:
@@ -139,9 +84,7 @@ schemes:
       targets:
         OneBox: all
         OneBoxAppTests: [test]
-        PodPinToolTests: [test]
     test:
       gatherCoverageData: true
       targets:
         - OneBoxAppTests
-        - PodPinToolTests

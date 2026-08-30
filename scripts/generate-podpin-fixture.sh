@@ -18,7 +18,7 @@ done
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 lock_file="$repo_root/Tools/tool-lock.json"
-fixture="$repo_root/OneBox/Tools/PodPin/Resources/Fixtures/podpin-sample.m4a"
+fixture="$repo_root/Packages/Tools/PodPinTool/Tests/PodPinToolTests/Resources/Fixtures/podpin-sample.m4a"
 expected_fixture_sha256="322960221436fc0b7c3c8d6076b2afcb3ebcded91b34652f814389263ca8fe06"
 
 [[ -f "$lock_file" ]] || {
