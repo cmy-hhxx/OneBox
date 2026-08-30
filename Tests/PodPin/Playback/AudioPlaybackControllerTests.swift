@@ -109,9 +109,13 @@ final class AudioPlaybackControllerTests: XCTestCase {
 
         // Headless XCTest does not guarantee an audible output route. Reaching
         // buffering still proves that autoplay intent survived asset readiness.
-        try await waitUntil {
-            controller.state == .buffering || controller.state == .playing
-        }
+        // A cold AVFoundation service can take longer than the helper's normal limit.
+        try await waitUntil(
+            {
+                controller.state == .buffering || controller.state == .playing
+            },
+            timeout: 5
+        )
         XCTAssertTrue(phases.contains(.buffering))
         XCTAssertTrue(didChangeRateWhileBuffering)
         XCTAssertEqual(controller.rate, 1.5)

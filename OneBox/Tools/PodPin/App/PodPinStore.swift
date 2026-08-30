@@ -728,7 +728,7 @@ final class PodPinStore: ObservableObject {
             if candidates.urls.count > 1 {
                 importIssue = .message("检测到 \(candidates.urls.count) 条可导入链接。本版一次只能导入一条，请只保留目标链接。")
             } else if candidates.detectedHTTPSURLCount > 0 {
-                importIssue = .message("没有找到可导入的 B 站、抖音或小宇宙公开链接。")
+                importIssue = .message("没有找到可导入的 B 站、抖音、小宇宙或 Fireside 公开链接。")
             } else {
                 importIssue = .message("请粘贴包含 HTTPS 公开链接的分享内容。")
             }

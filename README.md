@@ -33,8 +33,9 @@ OneBox 是一个面向单个本机用户的 macOS 工具箱。内置工具共享
   设备、系统媒体键，以及只记录实际听过区间的进度恢复。
 - 继续使用 `~/Library/Application Support/PodPin/` 和原 PodPin 偏好 suite，因此已有
   资料库无需复制；不要同时运行独立 PodPin 与 OneBox 中的 PodPin。
-- 普通构建支持 fixture 与在线播放。离线下载的发行产物还需按 [媒体工具策略](Tools/README.md)
-  获取并打包锁定的 `ffmpeg`、`ffprobe` 和暂留 `yt-dlp`。
+- Debug 和测试构建提供内置 fixture；未打包外部媒体工具的构建支持在线播放。离线下载的
+  Release 产物还需按[媒体工具策略](Tools/README.md)获取并打包锁定的 `ffmpeg`、`ffprobe`
+  和暂留 `yt-dlp`。
 - 不支持账号、登录、私有或付费内容、普通多链接批量、云同步、目录订阅、剪贴板监听、
   transcript、独立菜单栏入口或全局浮动播放器。
 

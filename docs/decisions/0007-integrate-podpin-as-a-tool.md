@@ -39,8 +39,9 @@ module。需要明确后台生命周期、数据位置和媒体工具发行方�
   构造播放对象和安装媒体命令。首次激活后，明确开始的播放和下载可以在切换工具后
   继续；导入探测、WebKit 和浏览器授权等瞬态工作在离开相关界面时取消。
 - `ToolRegistration` 增加一个默认 no-op 的异步应用退出 hook。App 统一等待已激活
-  工具 flush 状态并移除监听器后再完成退出。这是后台工具唯一新增的宿主生命周期
-  interface，不加入后台启动或通用 capability bag。
+  工具 flush 状态并移除监听器，但最多等待 15 秒；到期后取消准备任务并继续退出。
+  shutdown 必须幂等且可取消，超时退出不视为成功 flush 的证据。这是后台工具唯一新增的
+  宿主生命周期 interface，不加入后台启动或通用 capability bag。
 - 不迁入第二个 `@main`、PodPin activation policy、独立资料库 Window、全局设置命令
   或第二套常驻侧栏。资料库、导入、正在播放和设置在 OneBox 工具内容区内切换；
   原浮动播放器的核心控制改成 OneBox 内常驻的紧凑播放条。
@@ -48,9 +49,9 @@ module。需要明确后台生命周期、数据位置和媒体工具发行方�
   namespace。数据库只保存该目录内的相对媒体路径，因此零复制保留现有资料库、队列、
   进度与媒体。偏好继续读取 `io.github.cmy-hhxx.podpin` suite。OneBox 不解析这些数据，
   同时运行独立 PodPin 与 OneBox PodPin 工具不在支持范围内，且迁移不得删除旧数据。
-- OneBox 继续保持非 App Sandbox 和 Hardened Runtime。网络只由用户导入触发；浏览器
-  Profile 只在类型化反滥用挑战和用户明确选择后读取，临时 Cookie、header 和媒体 URL
-  不写入业务存储或日志。
+- OneBox 继续保持非 App Sandbox 和 Hardened Runtime。应用启动本身不联网；网络只由
+  用户发起的导入、在线播放、下载或重试触发。浏览器 Profile 只在类型化反滥用挑战和
+  用户明确选择后读取，临时 Cookie、header 和媒体 URL 不写入业务存储或日志。
 - 离线下载继续使用锁定的 `ffmpeg`、`ffprobe` 和暂留 `yt-dlp`。二进制不进入 Git；
   专用脚本校验来源、哈希、arm64、动态依赖和许可证后再放入并重签 OneBox app。
 - 运行时诊断只使用脱敏的 macOS Unified Logging，不迁移 PodPin 的 JSONL 文件日志。
