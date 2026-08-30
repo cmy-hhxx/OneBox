@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-26
+- Amended by: [ADR-0010](0010-require-package-per-tool-isolation.md)
 
 ## Context
 
@@ -20,7 +21,7 @@ ASCII 工坊依赖 Metal 实时预览和全尺寸离屏导出。OneBox 当前是
 ## Decision
 
 - OneBox 从本变更起仅构建 `arm64`，最低系统保持 macOS 15。
-- `project.yml` 是架构设置的唯一来源，所有 target 继承 `ARCHS: arm64`。
+- `project.yml` 锁定最终 OneBox App 和 Xcode 集成 target 的 `ARCHS: arm64`；本地 package 声明 macOS 15+，并只在受支持的 arm64 开发、CI 和发行环境中验收。
 - CI 和发布验收必须运行在 Apple Silicon；无 Metal 设备的环境只允许显式跳过像素集成测试，不得替代本机验收。
 
 ## Consequences

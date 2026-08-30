@@ -1,8 +1,9 @@
 # ADR-0003: 用 Xcode target 强制模块依赖
 
-- Status: Accepted
+- Status: Superseded
 - Date: 2026-08-24
 - Amended by: [ADR-0004](0004-keep-app-specific-platform-code-in-app.md)
+- Superseded by: [ADR-0010](0010-require-package-per-tool-isolation.md)
 
 ## Context
 
