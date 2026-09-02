@@ -56,6 +56,7 @@ open OneBox.xcodeproj
 ./scripts/check.sh
 ./scripts/benchmark-ascii.sh # Release ASCII 导出与内存基准
 ./scripts/benchmark-stock-watch.sh # Release 股票看盘刷新、存储与图表准备基准
+./scripts/benchmark-podpin.sh # Release PodPin 离线工作区与文件夹树基准
 
 # 每个 package 也可从自己的根目录独立运行 Debug/Release build 与 test：
 cd Packages/Tools/PodPinTool

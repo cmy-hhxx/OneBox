@@ -258,6 +258,51 @@ final class PublicMarketDataClientTests: XCTestCase {
         XCTAssertEqual(hosts.last, "push2delay.eastmoney.com")
     }
 
+    func testPersistedDottedUSIdentifierUsesTheFirstDelimiter() async throws {
+        let identifierStore = EastMoneyIdentifierStore(defaults: nil)
+        let instrument = Instrument(
+            symbol: "BRK.B",
+            name: "伯克希尔",
+            namespace: .unitedStates
+        )
+        identifierStore.setIdentifier("107.BRK.B", for: instrument.id)
+        StubURLProtocol.handler = { request in
+            switch request.url?.host {
+            case "web.ifzq.gtimg.cn":
+                return Self.response(for: request, json: "{}", statusCode: 503)
+            case "push2delay.eastmoney.com":
+                let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+                XCTAssertEqual(
+                    components?.queryItems?.first(where: { $0.name == "secid" })?.value,
+                    "107.BRK.B"
+                )
+                return Self.response(
+                    for: request,
+                    json: Self.eastMoneyQuoteJSON(
+                        previousClose: "500.00",
+                        code: "BRK.B",
+                        market: 107
+                    )
+                )
+            case "searchapi.eastmoney.com":
+                XCTFail("A valid persisted dotted identifier must not be resolved again")
+                return Self.response(for: request, json: "{}", statusCode: 500)
+            default:
+                XCTFail("Unexpected host: \(request.url?.host ?? "nil")")
+                return Self.response(for: request, json: "{}", statusCode: 500)
+            }
+        }
+        let client = PublicMarketDataClient(
+            session: makeSession(),
+            identifierStore: identifierStore
+        )
+
+        let quote = try await client.fetchQuote(for: instrument)
+
+        XCTAssertEqual(quote.source, .eastMoney)
+        XCTAssertEqual(quote.instrumentID, instrument.id)
+    }
+
     func testStalePersistedUSIdentifierIsResolvedAgainAndReplaced() async throws {
         let requestedIdentifiers = OSAllocatedUnfairLock<[String]>(initialState: [])
         let identifierStore = EastMoneyIdentifierStore(defaults: nil)
@@ -323,6 +368,39 @@ final class PublicMarketDataClientTests: XCTestCase {
         XCTAssertEqual(quote.source, .eastMoney)
         XCTAssertEqual(requestedIdentifiers.withLock { $0 }, ["105.AAPL", "106.AAPL"])
         XCTAssertEqual(identifierStore.identifier(for: instrument.id), "106.AAPL")
+    }
+
+    func testMalformedTencentMinuteRejectsTheWholeSeriesAndFallsBack() async throws {
+        StubURLProtocol.handler = { request in
+            switch request.url?.host {
+            case "web.ifzq.gtimg.cn":
+                return Self.response(
+                    for: request,
+                    json: Self.tencentQuoteJSON(
+                        previousClose: "1490.00",
+                        minuteValues: [
+                            "0930 1500.00 1 1",
+                            "malformed minute",
+                            "0931 1502.00 1 1",
+                        ]
+                    )
+                )
+            case "push2delay.eastmoney.com":
+                return Self.response(
+                    for: request,
+                    json: Self.eastMoneyQuoteJSON(previousClose: "1490.00")
+                )
+            default:
+                XCTFail("Unexpected host: \(request.url?.host ?? "nil")")
+                return Self.response(for: request, json: "{}", statusCode: 500)
+            }
+        }
+        let client = PublicMarketDataClient(session: makeSession())
+
+        let quote = try await client.fetchQuote(for: Instrument.initialWatchlist[0])
+
+        XCTAssertEqual(quote.source, .eastMoney)
+        XCTAssertEqual(quote.minuteBars.count, 2)
     }
 
     func testInvalidTencentCandidateFallsBackToValidEastMoney() async throws {
@@ -421,43 +499,22 @@ final class PublicMarketDataClientTests: XCTestCase {
         }
     }
 
-    func testProviderOHLCInconsistencyStillProducesPersistableSnapshot() async throws {
+    func testMalformedEastMoneyMinuteRejectsTheWholeSeries() async throws {
         StubURLProtocol.handler = { request in
             switch request.url?.host {
             case "web.ifzq.gtimg.cn":
                 return Self.response(for: request, json: "{}", statusCode: 503)
-            case "searchapi.eastmoney.com":
-                return Self.response(
-                    for: request,
-                    json: """
-                        {
-                          "QuotationCodeTable": {
-                            "Data": [
-                              {"Code":"AAPL","Name":"苹果","Classify":"UsStock","SecurityType":"20","MktNum":"105","QuoteID":"105.AAPL"}
-                            ],
-                            "Status": 0,
-                            "Message": "OK"
-                          }
-                        }
-                        """
-                )
             case "push2delay.eastmoney.com":
                 return Self.response(
                     for: request,
-                    json: """
-                        {
-                          "rc": 0,
-                          "data": {
-                            "code": "AAPL",
-                            "market": 105,
-                            "preClose": 306.90,
-                            "trends": [
-                              "2026-08-11 03:59,307.850,307.855,307.870,307.670,377815,116307446.000,307.1253",
-                              "2026-08-11 04:00,307.855,308.260,308.250,307.800,10600910,3259890016.000,306.8981"
-                            ]
-                          }
-                        }
-                        """
+                    json: Self.eastMoneyQuoteJSON(
+                        previousClose: "1490.00",
+                        trends: [
+                            "2026-08-06 09:30,1495.00,1500.00,1501.00,1494.00,1,1,1",
+                            "malformed minute",
+                            "2026-08-06 09:31,1500.00,1502.00,1503.00,1499.00,1,1,1",
+                        ]
+                    )
                 )
             default:
                 XCTFail("Unexpected host: \(request.url?.host ?? "nil")")
@@ -465,17 +522,43 @@ final class PublicMarketDataClientTests: XCTestCase {
             }
         }
         let client = PublicMarketDataClient(session: makeSession())
-        let instrument = Instrument.initialWatchlist[2]
-        let database = try MarketDatabase.inMemory()
-        try await database.replaceWatchlist(with: [instrument])
 
-        let quote = try await client.fetchQuote(for: instrument)
-        let saved = try await database.saveQuote(quote, for: instrument)
-        let lastBar = try XCTUnwrap(quote.minuteBars.last)
+        do {
+            _ = try await client.fetchQuote(for: Instrument.initialWatchlist[0])
+            XCTFail("Expected a malformed minute to reject the EastMoney series")
+        } catch MarketDataError.invalidResponse {
+            // Expected.
+        }
+    }
 
-        XCTAssertTrue(saved)
-        XCTAssertEqual(lastBar.close, 308.260, accuracy: 0.001)
-        XCTAssertEqual(lastBar.high, 308.260, accuracy: 0.001)
+    func testInvalidEastMoneyOHLCRejectsTheWholeSeries() async throws {
+        StubURLProtocol.handler = { request in
+            switch request.url?.host {
+            case "web.ifzq.gtimg.cn":
+                return Self.response(for: request, json: "{}", statusCode: 503)
+            case "push2delay.eastmoney.com":
+                return Self.response(
+                    for: request,
+                    json: Self.eastMoneyQuoteJSON(
+                        previousClose: "1490.00",
+                        trends: [
+                            "2026-08-06 09:30,1495.00,1500.00,1499.00,1494.00,1,1,1"
+                        ]
+                    )
+                )
+            default:
+                XCTFail("Unexpected host: \(request.url?.host ?? "nil")")
+                return Self.response(for: request, json: "{}", statusCode: 500)
+            }
+        }
+        let client = PublicMarketDataClient(session: makeSession())
+
+        do {
+            _ = try await client.fetchQuote(for: Instrument.initialWatchlist[0])
+            XCTFail("Expected invalid OHLC to reject the EastMoney series")
+        } catch MarketDataError.invalidResponse {
+            // Expected.
+        }
     }
 
     func testUSFallbackResolvesItsProviderIdentifierWithoutPriorSearch() async throws {

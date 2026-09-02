@@ -17,22 +17,18 @@ struct StockWatchWorkspaceView: View {
     @AccessibilityFocusState private var isInspectorButtonFocused: Bool
 
     var body: some View {
-        GeometryReader { proxy in
-            let layout = StockWatchWorkspaceLayout(availableWidth: proxy.size.width)
+        VStack(spacing: DesignMetrics.space8) {
+            StockWatchToolbar(
+                store: store,
+                isInspectorPresented: isInspectorPresented,
+                inspectorFocus: $isInspectorButtonFocused,
+                addInstrument: { isAddInstrumentPresented = true },
+                replaceWatchlistFromJSON: { isJSONSheetPresented = true },
+                refresh: refresh,
+                toggleInspector: toggleInspector
+            )
 
-            VStack(spacing: DesignMetrics.space8) {
-                StockWatchToolbar(
-                    store: store,
-                    isInspectorPresented: isInspectorPresented,
-                    inspectorFocus: $isInspectorButtonFocused,
-                    addInstrument: { isAddInstrumentPresented = true },
-                    replaceWatchlistFromJSON: { isJSONSheetPresented = true },
-                    refresh: refresh,
-                    toggleInspector: toggleInspector
-                )
-
-                workspaceContent(layout: layout)
-            }
+            workspaceContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .sheet(isPresented: $isAddInstrumentPresented) {
@@ -56,32 +52,15 @@ struct StockWatchWorkspaceView: View {
         }
     }
 
-    private func workspaceContent(layout: StockWatchWorkspaceLayout) -> some View {
+    private var workspaceContent: some View {
         ZStack(alignment: .topTrailing) {
-            if layout.usesDockedInspector {
-                HStack(spacing: DesignMetrics.space12) {
-                    monitor
-                        .zIndex(StockWatchWorkspaceLayer.monitor.zIndex)
+            HStack(spacing: DesignMetrics.space12) {
+                monitor
 
-                    if isInspectorPresented {
-                        inspector
-                            .frame(width: 248)
-                            .transition(inspectorTransition)
-                            .zIndex(StockWatchWorkspaceLayer.inspector.zIndex)
-                    }
-                }
-            } else {
-                ZStack(alignment: .trailing) {
-                    monitor
-                        .zIndex(StockWatchWorkspaceLayer.monitor.zIndex)
-
-                    if isInspectorPresented {
-                        inspector
-                            .frame(width: layout.compactInspectorWidth)
-                            .padding(DesignMetrics.space12)
-                            .transition(inspectorTransition)
-                            .zIndex(StockWatchWorkspaceLayer.inspector.zIndex)
-                    }
+                if isInspectorPresented {
+                    inspector
+                        .frame(width: DesignMetrics.inspectorWidth)
+                        .transition(inspectorTransition)
                 }
             }
 
@@ -97,7 +76,7 @@ struct StockWatchWorkspaceView: View {
                         ? .opacity
                         : .move(edge: .top).combined(with: .opacity)
                 )
-                .zIndex(StockWatchWorkspaceLayer.alert.zIndex)
+                .zIndex(1)
             }
         }
         .animation(
@@ -177,25 +156,4 @@ struct StockWatchWorkspaceView: View {
         }
         selectedInstrumentID = store.instruments.first?.id
     }
-}
-
-@MainActor
-struct StockWatchWorkspaceLayout: Equatable {
-    let availableWidth: CGFloat
-
-    var usesDockedInspector: Bool {
-        availableWidth >= 700
-    }
-
-    var compactInspectorWidth: CGFloat {
-        min(360, max(320, availableWidth - DesignMetrics.space24))
-    }
-}
-
-enum StockWatchWorkspaceLayer: Double {
-    case monitor = 0
-    case inspector = 1
-    case alert = 2
-
-    var zIndex: Double { rawValue }
 }

@@ -79,7 +79,13 @@ actor BilibiliContentAdapter: ContentSourceAdapter {
             var request = URLRequest(url: sourceURL)
             request.timeoutInterval = 15
             request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
-            let result = try await transport.data(for: request)
+            let result = try await transport.data(
+                for: request,
+                redirectValidator: { original, redirected in
+                    original.scheme?.lowercased() == "https"
+                        && redirected.scheme?.lowercased() == "https"
+                        && redirected.host?.lowercased().hasSuffix(".bilibili.com") == true
+                })
             guard (200..<400).contains(result.response.statusCode),
                 let redirected = result.response.url,
                 redirected.host?.lowercased().hasSuffix(".bilibili.com") == true

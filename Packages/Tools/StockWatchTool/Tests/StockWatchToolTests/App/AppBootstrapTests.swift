@@ -6,6 +6,27 @@ import XCTest
 
 @MainActor
 final class StockWatchBootstrapTests: XCTestCase {
+    func testCancelledLifecycleWaiterReturnsWithoutTakingTheNextLease() async throws {
+        let coordinator = StockWatchLifecycleCoordinator()
+        let acquiredFirstLease = await coordinator.acquire()
+        let firstLease = try XCTUnwrap(acquiredFirstLease)
+        let waitingTask = Task { @MainActor in
+            await coordinator.acquire()
+        }
+        for _ in 0..<10 {
+            await Task.yield()
+        }
+
+        waitingTask.cancel()
+        let cancelledLease = await waitingTask.value
+
+        XCTAssertNil(cancelledLease)
+        coordinator.release(firstLease)
+        let acquiredNextLease = await coordinator.acquire()
+        let nextLease = try XCTUnwrap(acquiredNextLease)
+        coordinator.release(nextLease)
+    }
+
     func testConstructionIsLazyAndFailedOpenCanRetryWithoutMemoryFallback() async throws {
         let temporaryDirectory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
@@ -174,7 +195,17 @@ final class StockWatchBootstrapTests: XCTestCase {
         try await database.saveQuote(
             QuoteSnapshot(
                 instrumentID: instrument.id,
-                minuteBars: [],
+                minuteBars: [
+                    MinuteBar(
+                        time: try XCTUnwrap(
+                            ISO8601DateFormatter().date(from: "2026-07-30T07:00:00Z")
+                        ),
+                        open: 1_500,
+                        close: 1_510,
+                        high: 1_510,
+                        low: 1_500
+                    )
+                ],
                 dayOpen: 1_500,
                 previousClose: 1_490,
                 lastPrice: 1_510,
@@ -640,6 +671,39 @@ final class StockWatchBootstrapTests: XCTestCase {
             )
             XCTAssertFalse(remainingNames.contains { $0.contains(".importing-") })
         }
+    }
+
+    func testLegacyImportPublishesTheValidatedSnapshotEvenIfSourceChangesAfterCopy() async throws {
+        let applicationSupport = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: applicationSupport) }
+        let legacyDirectory = applicationSupport.appendingPathComponent(
+            "MarketSprite", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: legacyDirectory, withIntermediateDirectories: true)
+        let legacyURL = legacyDirectory.appendingPathComponent("marketsprite.sqlite")
+        let original = Instrument.initialWatchlist[0]
+        let changed = Instrument.initialWatchlist[2]
+        let legacyDatabase = try MarketDatabase.open(atPath: legacyURL.path)
+        try await legacyDatabase.replaceWatchlist(with: [original])
+        try await legacyDatabase.close()
+        let gate = ImportStageGate()
+        let storage = StockWatchStorage(
+            applicationSupportDirectory: applicationSupport,
+            importStageObserverForTesting: { stage in
+                await gate.observe(stage)
+            }
+        )
+
+        let openTask = Task { try await storage.open() }
+        try await gate.waitUntilSnapshotCopied()
+        let changedDatabase = try MarketDatabase.open(atPath: legacyURL.path)
+        try await changedDatabase.replaceWatchlist(with: [changed])
+        try await changedDatabase.close()
+        await gate.resume()
+        let imported = try await openTask.value
+        let importedWatchlist = try await imported.loadWatchlist()
+        try await imported.close()
+        XCTAssertEqual(importedWatchlist, [original])
     }
 
     func testCancellationAfterSnapshotCopyRemovesTemporaryAndCanonicalFiles() async throws {

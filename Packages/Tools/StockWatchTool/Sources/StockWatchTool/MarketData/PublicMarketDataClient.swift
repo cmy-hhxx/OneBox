@@ -116,8 +116,17 @@ actor PublicMarketDataClient: MarketDataClient {
                 market: instrument.market
             )
         else { throw MarketDataError.invalidResponse }
-        let bars = payload.minute.values.compactMap {
-            TencentParser.minuteBar(from: $0, date: date, market: instrument.market)
+        var bars: [MinuteBar] = []
+        bars.reserveCapacity(payload.minute.values.count)
+        for rawValue in payload.minute.values {
+            guard
+                let bar = TencentParser.minuteBar(
+                    from: rawValue,
+                    date: date,
+                    market: instrument.market
+                )
+            else { throw MarketDataError.invalidResponse }
+            bars.append(bar)
         }
         guard let last = bars.last else {
             throw MarketDataError.noIntradayData
@@ -199,8 +208,13 @@ actor PublicMarketDataClient: MarketDataClient {
             throw MarketDataError.invalidResponse
         }
 
-        let bars = payload.trends.compactMap {
-            EastMoneyParser.minuteBar(from: $0)
+        var bars: [MinuteBar] = []
+        bars.reserveCapacity(payload.trends.count)
+        for rawValue in payload.trends {
+            guard let bar = EastMoneyParser.minuteBar(from: rawValue) else {
+                throw MarketDataError.invalidResponse
+            }
+            bars.append(bar)
         }
         guard let first = bars.first, let last = bars.last else {
             throw MarketDataError.noIntradayData
@@ -245,15 +259,15 @@ actor PublicMarketDataClient: MarketDataClient {
         _ identifier: String,
         for instrument: Instrument
     ) -> Bool {
-        let parts = identifier.split(separator: ".", omittingEmptySubsequences: false)
         guard instrument.namespace == .unitedStates,
-            parts.count == 2,
-            !parts[0].isEmpty,
-            parts[0].allSatisfy(\.isNumber)
-        else {
-            return false
-        }
-        return parts[1] == Substring(instrument.symbol)
+            let delimiter = identifier.firstIndex(of: ".")
+        else { return false }
+
+        let marketNumber = identifier[..<delimiter]
+        let symbolStart = identifier.index(after: delimiter)
+        let symbol = identifier[symbolStart...]
+        return ["105", "106", "107"].contains(marketNumber)
+            && symbol == Substring(instrument.symbol)
     }
 
     private func request(_ url: URL) async throws -> Data {

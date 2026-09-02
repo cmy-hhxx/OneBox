@@ -1,3 +1,4 @@
+import OneBoxDesignSystem
 import XCTest
 
 @testable import StockWatchTool
@@ -53,32 +54,8 @@ final class AlertBannerViewTests: XCTestCase {
         XCTAssertTrue(messages[0].contains(alert.instrument.name))
     }
 
-    func testAlertLayerAlwaysAppearsAboveInspectorAndMonitor() {
-        XCTAssertLessThan(
-            StockWatchWorkspaceLayer.monitor.zIndex,
-            StockWatchWorkspaceLayer.inspector.zIndex
-        )
-        XCTAssertLessThan(
-            StockWatchWorkspaceLayer.inspector.zIndex,
-            StockWatchWorkspaceLayer.alert.zIndex
-        )
-    }
-
     @MainActor
-    func testInspectorDocksOnlyAtSevenHundredPointsOrWider() {
-        let compact = StockWatchWorkspaceLayout(availableWidth: 699).usesDockedInspector
-        let docked = StockWatchWorkspaceLayout(availableWidth: 700).usesDockedInspector
-
-        XCTAssertFalse(compact)
-        XCTAssertTrue(docked)
-    }
-
-    @MainActor
-    func testCompactInspectorWidthRemainsWithinItsSupportedBounds() {
-        let minimum = StockWatchWorkspaceLayout(availableWidth: 320).compactInspectorWidth
-        let maximum = StockWatchWorkspaceLayout(availableWidth: 699).compactInspectorWidth
-
-        XCTAssertEqual(minimum, 320)
-        XCTAssertEqual(maximum, 360)
+    func testInspectorUsesTheSharedDockedWidth() {
+        XCTAssertEqual(DesignMetrics.inspectorWidth, 248)
     }
 }

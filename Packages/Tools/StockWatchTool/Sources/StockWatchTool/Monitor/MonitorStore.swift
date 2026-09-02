@@ -806,6 +806,7 @@ final class MonitorStore: ObservableObject {
                 monitored.status = monitored.quote == nil ? .idle : .stale
                 monitored.statusMessage = message
             case .rejected(let message):
+                failures += 1
                 monitored.status = monitored.quote == nil ? .idle : .stale
                 monitored.statusMessage = message
             case .discarded:

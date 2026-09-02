@@ -21,9 +21,11 @@ struct ImportWorkspaceView: View {
     @State private var isProbing = false
     @State private var isImporting = false
     @State private var isVisible = false
+    @State private var isDestinationPickerPresented = false
     @State private var probeTask: Task<Void, Never>?
     @State private var selectedBrowserProfileID: String?
     @State private var probeGeneration = 0
+    @AccessibilityFocusState private var isDestinationPickerFocused: Bool
 
     init(
         store: PodPinStore,
@@ -466,29 +468,9 @@ struct ImportWorkspaceView: View {
     }
 
     private var destinationPicker: some View {
-        Menu {
-            FolderDestinationMenu(
-                folders: store.folderTree(),
-                selectedFolderID: destinationFolderID,
-                systemFolderLabel: "收件箱"
-            ) { folder in
-                destinationFolderID = folder.id
-            }
-            Divider()
-            Button("新建文件夹…") {
-                onRequestFolderEditor(
-                    FolderEditorRequest(
-                        operation: .create,
-                        source: .importWorkspace,
-                        defaultParentID: destinationFolderID == LibraryFolder.inboxID
-                            ? entryContext.defaultNewFolderParentID
-                            : destinationFolderID,
-                        onSaved: { folder in
-                            destinationFolderID = folder.id
-                        }
-                    )
-                )
-            }
+        Button {
+            isDestinationPickerFocused = false
+            isDestinationPickerPresented = true
         } label: {
             HStack(spacing: DesignMetrics.space4) {
                 Text("归档到")
@@ -503,8 +485,48 @@ struct ImportWorkspaceView: View {
             }
             .font(DesignTypography.body)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .buttonStyle(.borderless)
+        .accessibilityFocused($isDestinationPickerFocused)
+        .popover(isPresented: $isDestinationPickerPresented, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: DesignMetrics.space8) {
+                Text("归档到")
+                    .font(DesignTypography.sectionTitle)
+                    .foregroundStyle(palette.textPrimary)
+
+                LibraryFolderTreePicker(
+                    folders: store.folderTree(),
+                    selectedFolderID: destinationFolderID,
+                    onSelect: { folderID in
+                        guard let folderID else { return }
+                        destinationFolderID = folderID
+                        isDestinationPickerPresented = false
+                        restoreDestinationPickerFocus()
+                    }
+                )
+                .frame(minHeight: 160, maxHeight: 300)
+
+                Divider()
+
+                Button("新建文件夹…") {
+                    isDestinationPickerPresented = false
+                    onRequestFolderEditor(
+                        FolderEditorRequest(
+                            operation: .create,
+                            source: .importWorkspace,
+                            defaultParentID: destinationFolderID == LibraryFolder.inboxID
+                                ? entryContext.defaultNewFolderParentID
+                                : destinationFolderID,
+                            onSaved: { folder in
+                                destinationFolderID = folder.id
+                                restoreDestinationPickerFocus()
+                            }
+                        )
+                    )
+                }
+            }
+            .padding(DesignMetrics.space12)
+            .frame(width: 300, alignment: .leading)
+        }
         .accessibilityLabel("归档到 \(destinationFolderLabel)")
         .accessibilityValue(destinationFolderLabel)
         .accessibilityIdentifier("import.destination")
@@ -512,6 +534,13 @@ struct ImportWorkspaceView: View {
 
     private var destinationFolderLabel: String {
         store.folders.first(where: { $0.id == destinationFolderID })?.displayName ?? "收件箱"
+    }
+
+    private func restoreDestinationPickerFocus() {
+        Task { @MainActor in
+            await Task.yield()
+            isDestinationPickerFocused = true
+        }
     }
 
     private func resetForLinkChange() {

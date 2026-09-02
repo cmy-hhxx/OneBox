@@ -25,5 +25,6 @@ public enum DesignMetrics {
     public static let titlebarControlSize: CGFloat = 32
     public static let collapsedToggleLeadingInset: CGFloat = 80
     public static let dataRowHeight: CGFloat = 56
+    public static let inspectorWidth: CGFloat = 248
     public static let cornerRadius: CGFloat = 8
 }

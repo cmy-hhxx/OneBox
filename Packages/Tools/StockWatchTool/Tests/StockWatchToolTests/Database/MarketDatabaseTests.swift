@@ -3,6 +3,37 @@ import XCTest
 @testable import StockWatchTool
 
 final class MarketDatabaseTests: XCTestCase {
+    func testWatchlistPositionsAtIntegerMaximumNormalizeWithoutOverflow() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "StockWatchPositionOverflow.\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent(MarketDatabase.defaultFileName).path
+        let database = try MarketDatabase.open(atPath: path)
+        let instruments = Array(Instrument.initialWatchlist.prefix(2))
+        try await database.replaceWatchlist(with: instruments)
+        try await database.close()
+
+        try SQLiteTestSupport.execute(
+            "UPDATE watchlist SET position = CASE instrument_id "
+                + "WHEN '\(instruments[0].id.rawValue)' THEN 9223372036854775806 "
+                + "WHEN '\(instruments[1].id.rawValue)' THEN 9223372036854775807 END;",
+            atPath: path
+        )
+
+        let reopened = try MarketDatabase.open(atPath: path)
+        let loaded = try await reopened.loadWatchlist()
+        try await reopened.close()
+        XCTAssertEqual(loaded, instruments)
+        let positions = try SQLiteTestSupport.execute(
+            "SELECT group_concat(position, ',') FROM watchlist ORDER BY position;",
+            atPath: path
+        )
+        XCTAssertEqual(positions.trimmingCharacters(in: .whitespacesAndNewlines), "0,1")
+    }
+
     func testDefaultWatchlistIsSeededOnlyOnFirstLaunch() async throws {
         let database = try MarketDatabase.inMemory()
 

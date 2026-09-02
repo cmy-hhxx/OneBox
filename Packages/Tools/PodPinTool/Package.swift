@@ -12,9 +12,13 @@ let package = Package(
     ],
     traits: [
         .trait(
+            name: "Benchmark",
+            description: "Expose the offline Release workspace benchmark target",
+        ),
+        .trait(
             name: "Testing",
-            description: "Expose internal hooks only to explicit Release package tests"
-        )
+            description: "Expose internal hooks only to explicit Release package tests",
+        ),
     ],
     dependencies: [
         .package(path: "../../OneBoxCore"),
@@ -34,10 +38,14 @@ let package = Package(
             ],
             swiftSettings: [
                 .define(
+                    "PODPIN_BENCHMARK",
+                    .when(traits: ["Benchmark"]),
+                ),
+                .define(
                     "PODPIN_TESTING",
-                    .when(traits: ["Testing"])
-                )
-            ]
+                    .when(traits: ["Testing"]),
+                ),
+            ],
         ),
         .testTarget(
             name: "PodPinToolTests",
@@ -51,6 +59,10 @@ let package = Package(
             resources: [
                 .copy("Resources/Fixtures/podpin-sample.m4a")
             ]
+        ),
+        .testTarget(
+            name: "PodPinPerformanceTests",
+            dependencies: ["PodPinTool"]
         ),
     ],
     swiftLanguageModes: [.v6]

@@ -33,7 +33,11 @@ actor FiresideContentAdapter: ContentSourceAdapter {
             episode.metadata.sourceURL.absoluteString,
             forHTTPHeaderField: "Referer"
         )
-        let validation = try await transport.data(for: validationRequest)
+        let validation = try await transport.data(
+            for: validationRequest,
+            redirectValidator: { _, redirected in
+                Self.isApprovedMediaURL(redirected)
+            })
         guard (200..<400).contains(validation.response.statusCode),
             let finalURL = validation.response.url,
             Self.isApprovedMediaURL(finalURL)

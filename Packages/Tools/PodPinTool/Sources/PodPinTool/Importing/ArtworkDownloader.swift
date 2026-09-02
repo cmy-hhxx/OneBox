@@ -9,34 +9,49 @@ protocol ArtworkCaching: Sendable {
 
 actor ArtworkDownloader: ArtworkCaching {
     private static let maximumArtworkBytes = 10 * 1_024 * 1_024
+    private let transport: URLSessionHTTPTransport
+
+    init(session: URLSession = .shared) {
+        transport = URLSessionHTTPTransport(session: session)
+    }
 
     func cacheArtwork(from url: URL, to destinationURL: URL) async throws {
-        guard url.scheme?.lowercased() == "https" else { throw ArtworkDownloadError.invalidURL }
+        guard url.scheme?.lowercased() == "https", url.host != nil else {
+            throw ArtworkDownloadError.invalidURL
+        }
         var request = URLRequest(url: url)
         request.timeoutInterval = 20
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
-        guard let response = response as? HTTPURLResponse,
-            (200..<300).contains(response.statusCode),
-            response.mimeType?.lowercased().hasPrefix("image/") == true,
-            response.expectedContentLength <= Int64(Self.maximumArtworkBytes)
-                || response.expectedContentLength == NSURLSessionTransferSizeUnknown
-        else { throw ArtworkDownloadError.invalidResponse }
-
-        var data = Data()
-        for try await byte in bytes {
-            guard data.count < Self.maximumArtworkBytes else {
+        let result: HTTPTransportResponse
+        do {
+            result = try await transport.data(for: request, redirectValidator: Self.acceptsRedirect)
+        } catch ContentImportError.cancelled {
+            throw ArtworkDownloadError.cancelled
+        } catch {
+            throw ArtworkDownloadError.invalidResponse
+        }
+        guard (200..<300).contains(result.response.statusCode),
+            result.response.mimeType?.lowercased().hasPrefix("image/") == true,
+            result.data.count <= Self.maximumArtworkBytes,
+            !result.data.isEmpty
+        else {
+            if result.data.count > Self.maximumArtworkBytes {
                 throw ArtworkDownloadError.responseTooLarge
             }
-            data.append(byte)
+            throw ArtworkDownloadError.invalidResponse
         }
-        guard !data.isEmpty else { throw ArtworkDownloadError.invalidResponse }
 
         let fileManager = FileManager.default
         try fileManager.createDirectory(
             at: destinationURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        try data.write(to: destinationURL, options: .atomic)
+        try result.data.write(to: destinationURL, options: .atomic)
+    }
+
+    private static func acceptsRedirect(from original: URL, to redirected: URL) -> Bool {
+        original.scheme?.lowercased() == "https"
+            && redirected.scheme?.lowercased() == "https"
+            && original.host?.lowercased() == redirected.host?.lowercased()
     }
 }
 
@@ -44,4 +59,5 @@ private enum ArtworkDownloadError: Error {
     case invalidURL
     case invalidResponse
     case responseTooLarge
+    case cancelled
 }

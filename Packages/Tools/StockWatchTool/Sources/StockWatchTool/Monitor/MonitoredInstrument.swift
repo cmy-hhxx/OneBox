@@ -12,6 +12,20 @@ struct MonitoredInstrument: Identifiable, Equatable, Sendable {
 
     let instrument: Instrument
     var quote: QuoteSnapshot?
+    var chart: PreparedIntradayChart?
     var status: MonitorStatus
     var statusMessage: String?
+
+    init(
+        instrument: Instrument,
+        quote: QuoteSnapshot?,
+        status: MonitorStatus,
+        statusMessage: String?
+    ) {
+        self.instrument = instrument
+        self.quote = quote
+        chart = quote.map { PreparedIntradayChart(instrument: instrument, quote: $0) }
+        self.status = status
+        self.statusMessage = statusMessage
+    }
 }

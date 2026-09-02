@@ -13,58 +13,25 @@ struct StockWatchInspector: View {
     @Environment(\.designPalette) private var palette
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.space12) {
-            header
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: DesignMetrics.space16) {
-                    SelectedInstrumentInspectorSection(
-                        store: store,
-                        selectedInstrumentID: selectedInstrumentID
-                    )
-                    sectionDivider
-                    StockWatchAlertInspectorSection(
-                        store: store,
-                        preferences: preferences
-                    )
-                    sectionDivider
-                    StockWatchDataInspectorSection(
-                        store: store,
-                        preferences: preferences,
-                        copyText: copyText,
-                        revealDirectory: revealDirectory
-                    )
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+        ToolInspectorPanel("检查器", closeLabel: "关闭检查器", close: close) {
+            VStack(alignment: .leading, spacing: DesignMetrics.space16) {
+                SelectedInstrumentInspectorSection(
+                    store: store,
+                    selectedInstrumentID: selectedInstrumentID
+                )
+                sectionDivider
+                StockWatchAlertInspectorSection(
+                    store: store,
+                    preferences: preferences
+                )
+                sectionDivider
+                StockWatchDataInspectorSection(
+                    store: store,
+                    preferences: preferences,
+                    copyText: copyText,
+                    revealDirectory: revealDirectory
+                )
             }
-            .scrollIndicators(.hidden)
-        }
-        .font(DesignTypography.body)
-        .foregroundStyle(palette.textPrimary)
-        .padding(DesignMetrics.space16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(palette.surface)
-        .clipShape(.rect(cornerRadius: DesignMetrics.cornerRadius))
-        .overlay {
-            RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius)
-                .stroke(palette.border, lineWidth: 1)
-        }
-        .accessibilityAction(.escape, close)
-    }
-
-    private var header: some View {
-        HStack {
-            Text("检查器")
-                .font(DesignTypography.sectionTitle)
-
-            Spacer(minLength: 0)
-
-            Button("关闭检查器", systemImage: "xmark", action: close)
-                .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
-                .keyboardShortcut(.cancelAction)
-                .frame(width: DesignMetrics.space24, height: DesignMetrics.space24)
-                .accessibilityLabel("关闭检查器")
         }
     }
 

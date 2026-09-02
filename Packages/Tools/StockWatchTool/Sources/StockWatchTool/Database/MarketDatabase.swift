@@ -597,23 +597,35 @@ actor MarketDatabase {
                 )
                 let positions = rows.map { row -> Int in row["position"] }
                 guard positions != Array(positions.indices) else { return }
-                guard let maximumPosition = positions.max(),
-                    maximumPosition <= Int.max - rows.count - 1
-                else {
-                    throw MarketDatabaseError.invalidWatchlist
-                }
-
-                let offset = maximumPosition + rows.count + 1
-                try database.execute(
-                    sql: "UPDATE watchlist SET position = position + ?",
-                    arguments: [offset]
-                )
+                var usedPositions = Set(positions)
                 for (position, row) in rows.enumerated() {
+                    let currentPosition: Int = row["position"]
+                    guard currentPosition != position else { continue }
+
+                    if let displacedInstrumentID = try String.fetchOne(
+                        database,
+                        sql: "SELECT instrument_id FROM watchlist WHERE position = ?",
+                        arguments: [position]
+                    ) {
+                        var scratchPosition = 0
+                        while usedPositions.contains(scratchPosition) {
+                            scratchPosition += 1
+                        }
+                        try database.execute(
+                            sql: "UPDATE watchlist SET position = ? WHERE instrument_id = ?",
+                            arguments: [scratchPosition, displacedInstrumentID]
+                        )
+                        usedPositions.remove(position)
+                        usedPositions.insert(scratchPosition)
+                    }
+
                     let instrumentID: String = row["instrument_id"]
                     try database.execute(
                         sql: "UPDATE watchlist SET position = ? WHERE instrument_id = ?",
                         arguments: [position, instrumentID]
                     )
+                    usedPositions.remove(currentPosition)
+                    usedPositions.insert(position)
                 }
             }
         }

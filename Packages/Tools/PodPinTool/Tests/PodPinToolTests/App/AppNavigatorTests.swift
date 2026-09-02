@@ -47,4 +47,24 @@ final class AppNavigatorTests: XCTestCase {
             return XCTFail("Expected the previous import destination")
         }
     }
+
+    func testSettingsPresentationKeepsTheCurrentWorkspaceRoute() {
+        let navigator = AppNavigator()
+        let folderID = UUID()
+        navigator.openImport(in: folderID)
+
+        navigator.showSettings()
+
+        XCTAssertTrue(navigator.isSettingsPresented)
+        guard case .importLink(let context) = navigator.destination else {
+            return XCTFail("Settings must not replace the current workspace")
+        }
+        XCTAssertEqual(context.destinationFolderID, folderID)
+
+        navigator.closeSettings()
+        XCTAssertFalse(navigator.isSettingsPresented)
+        guard case .importLink = navigator.destination else {
+            return XCTFail("Closing settings must preserve the current workspace")
+        }
+    }
 }

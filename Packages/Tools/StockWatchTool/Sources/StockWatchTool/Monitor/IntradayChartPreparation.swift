@@ -111,3 +111,41 @@ struct IntradayChartPreparation: Equatable, Sendable {
         }
     }
 }
+
+/// Immutable chart data prepared once when a quote enters the monitor store.
+/// Canvas rendering only projects these points into its current size.
+struct PreparedIntradayChart: Equatable, Sendable {
+    let points: [IntradayChartPoint]
+    let closes: [Double]
+    let segmentRoles: [MarketColorRole]
+    let low: Double
+    let high: Double
+    let previousClose: Double
+    let fallbackColorRole: MarketColorRole
+    let reviewMarkers: IntradayReviewMarkerSelection?
+
+    init(instrument: Instrument, quote: QuoteSnapshot) {
+        let showsReviewMarkers =
+            instrument.market == .aShare
+            && TradingCalendar.shouldShowAShareReviewMarkers(for: quote)
+        let preparation = IntradayChartPreparation(
+            points: quote.minuteBars,
+            market: instrument.market,
+            dayOpen: quote.dayOpen,
+            previousClose: quote.previousClose,
+            showReviewMarkers: showsReviewMarkers
+        )
+
+        points = preparation.points
+        closes = preparation.points.map(\.close)
+        segmentRoles = IntradaySegmentColoring.roles(
+            closes: closes,
+            market: instrument.market
+        )
+        low = preparation.low
+        high = preparation.high
+        previousClose = quote.previousClose
+        fallbackColorRole = instrument.market.colorRole(forChange: quote.changePercent)
+        reviewMarkers = preparation.reviewMarkers
+    }
+}

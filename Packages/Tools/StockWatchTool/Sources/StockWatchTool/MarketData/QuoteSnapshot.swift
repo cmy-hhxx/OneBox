@@ -25,6 +25,7 @@ enum QuoteSnapshotValidationError: LocalizedError, Equatable, Sendable {
     case instrumentMismatch(expected: InstrumentID, actual: InstrumentID)
     case invalidQuoteValues
     case invalidQuoteTime
+    case missingMinuteBars
     case minuteTimesNotStrictlyIncreasing
     case invalidMinuteValues
     case minuteOutsideQuoteSession
@@ -41,6 +42,8 @@ enum QuoteSnapshotValidationError: LocalizedError, Equatable, Sendable {
             tr("开盘价、昨收价和最新价必须为有限正数")
         case .invalidQuoteTime:
             tr("行情时间无效")
+        case .missingMinuteBars:
+            tr("行情快照必须包含分钟线")
         case .minuteTimesNotStrictlyIncreasing:
             tr("分钟线时间必须严格递增且不能重复")
         case .invalidMinuteValues:
@@ -70,6 +73,9 @@ enum QuoteSnapshotValidator {
             throw QuoteSnapshotValidationError.invalidQuoteTime
         }
 
+        guard !snapshot.minuteBars.isEmpty else {
+            throw QuoteSnapshotValidationError.missingMinuteBars
+        }
         let sessionDate = TradingCalendar.sessionDate(
             for: snapshot.marketTime,
             market: instrument.market

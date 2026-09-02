@@ -295,10 +295,8 @@ private final class SpawnedProcess: @unchecked Sendable {
 
     func close() {
         closeParentWriteEnds()
-        outputReader.readabilityHandler = nil
-        errorReader.readabilityHandler = nil
-        try? outputReader.close()
-        try? errorReader.close()
+        outputCollector.close(outputReader)
+        errorCollector.close(errorReader)
     }
 
     private func requireOutputWriterFileDescriptor() throws -> Int32 {
@@ -433,6 +431,18 @@ private final class PipeCollector: @unchecked Sendable {
         handle.readabilityHandler = nil
         data.append(handle.readDataToEndOfFile())
         return data
+    }
+
+    func close(_ handle: FileHandle) {
+        lock.lock()
+        guard !finished else {
+            lock.unlock()
+            return
+        }
+        finished = true
+        handle.readabilityHandler = nil
+        lock.unlock()
+        try? handle.close()
     }
 }
 

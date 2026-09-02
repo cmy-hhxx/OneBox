@@ -36,6 +36,38 @@ final class MonitorStoreTests: XCTestCase {
         await store.stop()
     }
 
+    func testCancelledRefreshWaitingForRequestPermitReturnsPromptly() async throws {
+        let database = try MarketDatabase.inMemory()
+        let first = Instrument(symbol: "FIRST", name: "甲", namespace: .unitedStates)
+        let second = Instrument(symbol: "SECOND", name: "乙", namespace: .unitedStates)
+        let client = OneShotSuspendingMarketDataClient()
+        await client.suspendNextFetch(with: makeQuote(for: first, price: 100))
+        let coordinator = QuoteRefreshCoordinator(
+            client: client,
+            database: database,
+            maximumConcurrentRequests: 1
+        )
+        let firstRefresh = Task {
+            await coordinator.refresh(instruments: [first], currentQuotes: [:])
+        }
+        try await waitUntil("首个行情请求进入挂起点") { await client.isFetchSuspended }
+        let waitingRefresh = Task {
+            await coordinator.refresh(instruments: [second], currentQuotes: [:])
+        }
+        for _ in 0..<10 {
+            await Task.yield()
+        }
+
+        waitingRefresh.cancel()
+        let cancelledBatch = await waitingRefresh.value
+
+        XCTAssertEqual(cancelledBatch.outcomes.count, 1)
+        let fetchCount = await client.fetchCount
+        XCTAssertEqual(fetchCount, 1)
+        await client.resumeSuspendedFetch()
+        _ = await firstRefresh.value
+    }
+
     func testCachedQuoteRemainsVisibleAndBecomesStaleWhenRefreshFails() async throws {
         let database = try MarketDatabase.inMemory()
         let instrument = Instrument.initialWatchlist[2]
@@ -387,7 +419,10 @@ final class MonitorStoreTests: XCTestCase {
         XCTAssertFalse(expectedError.isEmpty)
         XCTAssertEqual(store.monitoredInstrument(for: instrument.id)?.statusMessage, expectedError)
         XCTAssertNil(store.activeAlert)
-        XCTAssertNil(store.sourceError)
+        XCTAssertEqual(
+            store.sourceError,
+            tr("行情连接暂不可用，已保留上次成功数据")
+        )
         let storedQuotes = try await database.loadLatestQuotes(for: [instrument])
         XCTAssertEqual(
             storedQuotes,
@@ -454,7 +489,10 @@ final class MonitorStoreTests: XCTestCase {
         XCTAssertFalse(expectedError.isEmpty)
         XCTAssertEqual(store.monitoredInstrument(for: observed.id)?.statusMessage, expectedError)
         XCTAssertNil(store.activeAlert)
-        XCTAssertNil(store.sourceError)
+        XCTAssertEqual(
+            store.sourceError,
+            tr("行情连接暂不可用，已保留上次成功数据")
+        )
         let storedQuotes = try await database.loadLatestQuotes(for: [observed])
         XCTAssertEqual(
             storedQuotes,

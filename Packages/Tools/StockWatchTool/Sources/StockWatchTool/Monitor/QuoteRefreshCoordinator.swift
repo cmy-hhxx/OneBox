@@ -80,7 +80,11 @@ actor QuoteRefreshCoordinator {
                             now: now
                         )
                     }
-                    return (index, outcome)
+                    return (
+                        index,
+                        outcome
+                            ?? QuoteRefreshOutcome(instrument: instrument, result: .discarded)
+                    )
                 }
             }
             var nextIndex = initialCount
@@ -106,7 +110,11 @@ actor QuoteRefreshCoordinator {
                                 now: now
                             )
                         }
-                        return (index, outcome)
+                        return (
+                            index,
+                            outcome
+                                ?? QuoteRefreshOutcome(instrument: instrument, result: .discarded)
+                        )
                     }
                 }
             }
@@ -226,9 +234,13 @@ actor QuoteRefreshCoordinator {
 }
 
 private actor QuoteRequestLimiter {
+    private struct Waiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Bool, Never>
+    }
+
     private var availablePermits: Int
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-    private var nextWaiterIndex = 0
+    private var waiters: [Waiter] = []
 
     init(limit: Int) {
         availablePermits = limit
@@ -236,31 +248,45 @@ private actor QuoteRequestLimiter {
 
     func withPermit<Result: Sendable>(
         _ operation: @Sendable () async -> Result
-    ) async -> Result {
-        await acquire()
+    ) async -> Result? {
+        guard await acquire() else { return nil }
         defer { release() }
         return await operation()
     }
 
-    private func acquire() async {
+    private func acquire() async -> Bool {
         if availablePermits > 0 {
             availablePermits -= 1
-            return
+            return true
         }
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
+        let id = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                waiters.append(Waiter(id: id, continuation: continuation))
+            }
+        } onCancel: { [self] in
+            Task {
+                await cancelAcquisition(id)
+            }
         }
     }
 
+    private func cancelAcquisition(_ id: UUID) {
+        guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+        let waiter = waiters.remove(at: index)
+        waiter.continuation.resume(returning: false)
+    }
+
     private func release() {
-        if nextWaiterIndex == waiters.count {
-            waiters.removeAll(keepingCapacity: true)
-            nextWaiterIndex = 0
+        guard !waiters.isEmpty else {
             availablePermits += 1
-        } else {
-            let continuation = waiters[nextWaiterIndex]
-            nextWaiterIndex += 1
-            continuation.resume()
+            return
         }
+        let waiter = waiters.removeFirst()
+        waiter.continuation.resume(returning: true)
     }
 }

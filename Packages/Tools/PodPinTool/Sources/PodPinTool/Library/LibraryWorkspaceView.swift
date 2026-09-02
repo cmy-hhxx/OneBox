@@ -106,6 +106,7 @@ enum LibraryItemAction {
     case togglePlayback
     case enqueueNext
     case enqueueLast
+    case move
     case delete
     case download
     case retryDownload
@@ -114,10 +115,16 @@ enum LibraryItemAction {
 
 /// The library lives inside OneBox's existing host navigation. Its own
 /// destinations stay in one content region beneath a compact, persistent bar.
-struct LibraryWorkspaceView: View {
+struct LibraryWorkspaceView<
+    ImportContent: View,
+    SettingsContent: View,
+    NowPlayingContent: View,
+    CompactPlayerContent: View
+>: View {
     let folders: [LibraryFolderNode]
     @Binding var selectedCollection: LibraryCollection
     @Binding var destination: LibraryDestination
+    let isSettingsPresented: Bool
     let selectedFolderTitle: String?
     let items: [LibraryItemRow]
     let itemsPhase: LibraryItemsPhase
@@ -127,19 +134,23 @@ struct LibraryWorkspaceView: View {
     let isPlaying: Bool
     let downloadSession: DownloadSession
     let playbackTimeline: PlaybackTimelineSession
-    let importContent: AnyView
-    let settingsContent: AnyView
-    let nowPlayingContent: AnyView
-    let compactPlayerContent: AnyView
+    let importContent: ImportContent
+    let settingsContent: SettingsContent
+    let nowPlayingContent: NowPlayingContent
+    let compactPlayerContent: CompactPlayerContent
     let onRequestFolderEditor: (FolderEditorRequest) -> Void
     let onFolderAction: (LibraryFolderNode, LibraryFolderAction) -> Void
     let onItemAction: (LibraryItemRow, LibraryItemAction) -> Void
-    let onMoveItem: (UUID, UUID) -> Void
     let onRetryItems: () -> Void
     let onLoadMoreItems: () -> Void
     let onShowNowPlaying: () -> Void
+    let onToggleSettings: () -> Void
+    let onCloseSettings: () -> Void
 
     @Environment(\.designPalette) private var palette
+    @State private var isCollectionPickerPresented = false
+    @AccessibilityFocusState private var isCollectionPickerButtonFocused: Bool
+    @AccessibilityFocusState private var isSettingsButtonFocused: Bool
 
     private var selectedFolderID: UUID {
         selectedCollection.defaultImportFolderID
@@ -165,15 +176,27 @@ struct LibraryWorkspaceView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            workspaceToolbar
-                .padding(.bottom, DesignMetrics.space8)
-            destinationPane
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        HStack(spacing: DesignMetrics.space12) {
+            VStack(spacing: 0) {
+                workspaceToolbar
+                    .padding(.bottom, DesignMetrics.space8)
+                destinationPane
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if destination != .nowPlaying {
-                Divider()
-                compactPlayerContent
+                if destination != .nowPlaying {
+                    Divider()
+                    compactPlayerContent
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            if isSettingsPresented {
+                ToolInspectorPanel("设置", closeLabel: "关闭设置", close: closeSettings) {
+                    settingsContent
+                }
+                .tint(palette.accent)
+                .frame(width: DesignMetrics.inspectorWidth)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -190,6 +213,15 @@ struct LibraryWorkspaceView: View {
     }
 
     private var workspaceToolbar: some View {
+        ViewThatFits(in: .horizontal) {
+            fullWorkspaceToolbar
+                .frame(minWidth: 460)
+
+            compactWorkspaceToolbar
+        }
+    }
+
+    private var fullWorkspaceToolbar: some View {
         HStack(spacing: DesignMetrics.space8) {
             collectionSelectionMenu
             folderManagementMenu
@@ -216,11 +248,55 @@ struct LibraryWorkspaceView: View {
             toolbarDestinationButton(
                 "设置",
                 systemImage: "gearshape",
-                isActive: destination == .settings,
+                isActive: isSettingsPresented,
                 accessibilityIdentifier: "workspace.settings"
             ) {
-                destination = .settings
+                toggleSettings()
             }
+            .accessibilityFocused($isSettingsButtonFocused)
+        }
+        .font(DesignTypography.bodyMedium)
+        .controlSize(.regular)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: DesignMetrics.titlebarControlSize,
+            alignment: .leading
+        )
+    }
+
+    private var compactWorkspaceToolbar: some View {
+        HStack(spacing: DesignMetrics.space4) {
+            collectionSelectionMenu
+                .frame(minWidth: 132, maxWidth: .infinity, alignment: .leading)
+            folderManagementMenu
+
+            Spacer(minLength: 0)
+
+            toolbarDestinationButton(
+                "导入",
+                systemImage: "link.badge.plus",
+                isActive: isImportDestination,
+                accessibilityIdentifier: "workspace.import"
+            ) {
+                openImportForSelectedFolder()
+            }
+
+            compactToolbarDestinationButton(
+                "正在播放",
+                systemImage: "waveform",
+                isActive: destination == .nowPlaying,
+                accessibilityIdentifier: "workspace.now-playing",
+                action: onShowNowPlaying
+            )
+
+            compactToolbarDestinationButton(
+                "设置",
+                systemImage: "gearshape",
+                isActive: isSettingsPresented,
+                accessibilityIdentifier: "workspace.settings",
+                action: toggleSettings
+            )
+            .accessibilityFocused($isSettingsButtonFocused)
         }
         .font(DesignTypography.bodyMedium)
         .controlSize(.regular)
@@ -232,24 +308,9 @@ struct LibraryWorkspaceView: View {
     }
 
     private var collectionSelectionMenu: some View {
-        Menu {
-            Section("资料集合") {
-                collectionButton("最近导入", collection: .recentlyImported)
-                collectionButton("最近播放", collection: .recentlyPlayed)
-                collectionButton("已下载", collection: .downloaded)
-            }
-
-            Divider()
-
-            Menu("文件夹") {
-                ForEach(folders) { folder in
-                    LibraryCollectionFolderMenuBranch(
-                        folder: folder,
-                        selectedFolderID: selectedFolderSelectionID,
-                        onSelect: selectFolder
-                    )
-                }
-            }
+        Button {
+            isCollectionPickerButtonFocused = false
+            isCollectionPickerPresented = true
         } label: {
             HStack(spacing: DesignMetrics.space8) {
                 Text(currentCollectionTitle)
@@ -264,7 +325,7 @@ struct LibraryWorkspaceView: View {
             .foregroundStyle(palette.textPrimary)
             .padding(.horizontal, DesignMetrics.space8)
             .frame(
-                minWidth: 156,
+                minWidth: 132,
                 maxWidth: 220,
                 minHeight: DesignMetrics.titlebarControlSize,
                 alignment: .leading
@@ -275,8 +336,15 @@ struct LibraryWorkspaceView: View {
                     .strokeBorder(palette.border, lineWidth: 1)
             }
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
+        .accessibilityFocused($isCollectionPickerButtonFocused)
+        .popover(isPresented: $isCollectionPickerPresented, arrowEdge: .bottom) {
+            LibraryCollectionPickerPanel(
+                folders: folders,
+                selectedCollection: selectedCollection,
+                onSelect: selectCollection
+            )
+        }
         .accessibilityLabel("选择资料集合或文件夹")
         .accessibilityValue(currentCollectionTitle)
         .help("选择资料集合或文件夹")
@@ -358,30 +426,39 @@ struct LibraryWorkspaceView: View {
             .help(title)
     }
 
-    @ViewBuilder
-    private func collectionButton(
+    private func compactToolbarDestinationButton(
         _ title: String,
-        collection: LibraryCollection
+        systemImage: String,
+        isActive: Bool,
+        accessibilityIdentifier: String,
+        action: @escaping () -> Void
     ) -> some View {
-        Button {
-            selectCollection(collection)
-        } label: {
-            if selectedCollection == collection {
-                Label(title, systemImage: "checkmark")
-            } else {
-                Text(title)
-            }
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(DesignTypography.bodyMedium)
+                .frame(
+                    width: DesignMetrics.titlebarControlSize,
+                    height: DesignMetrics.titlebarControlSize
+                )
+                .contentShape(.rect)
         }
+        .buttonStyle(.borderless)
+        .foregroundStyle(palette.textPrimary)
+        .background(
+            isActive ? palette.selection : palette.background,
+            in: .rect(cornerRadius: DesignMetrics.cornerRadius)
+        )
+        .accessibilityLabel(title)
+        .accessibilityValue(isActive ? "已打开" : "未打开")
+        .accessibilityIdentifier(accessibilityIdentifier)
+        .help(title)
     }
 
     private func selectCollection(_ collection: LibraryCollection) {
         selectedItemID = nil
         selectedCollection = collection
         destination = .library
-    }
-
-    private func selectFolder(_ folder: LibraryFolderNode) {
-        selectCollection(.folder(folder.id))
+        restoreCollectionPickerFocus()
     }
 
     private func requestFolderCreation(
@@ -419,8 +496,6 @@ struct LibraryWorkspaceView: View {
             libraryContent
         case .importLink:
             importContent
-        case .settings:
-            settingsContent
         case .nowPlaying:
             nowPlayingContent
         }
@@ -459,11 +534,7 @@ struct LibraryWorkspaceView: View {
                         isPlaying: currentItemID == item.id && isPlaying,
                         downloadSession: downloadSession,
                         playbackTimeline: playbackTimeline,
-                        folders: folders,
                         onTogglePlayback: { onItemAction(item, .togglePlayback) },
-                        onMove: { destinationID in
-                            onMoveItem(item.id, destinationID)
-                        },
                         onItemAction: { action in
                             onItemAction(item, action)
                         }
@@ -522,11 +593,7 @@ struct LibraryWorkspaceView: View {
         Button("下一项播放") { onItemAction(item, .enqueueNext) }
         Button("添加到队尾") { onItemAction(item, .enqueueLast) }
 
-        Menu("归档到") {
-            FolderDestinationMenu(folders: folders, excluding: [item.folderID]) { folder in
-                onMoveItem(item.id, folder.id)
-            }
-        }
+        Button("移动到…") { onItemAction(item, .move) }
 
         Divider()
         moreItemMenu(for: item)
@@ -567,6 +634,26 @@ struct LibraryWorkspaceView: View {
         destination = .importLink(
             ImportEntryContext(destinationFolderID: selectedFolderID)
         )
+    }
+
+    private func toggleSettings() {
+        isSettingsButtonFocused = false
+        onToggleSettings()
+    }
+
+    private func closeSettings() {
+        onCloseSettings()
+        Task { @MainActor in
+            await Task.yield()
+            isSettingsButtonFocused = true
+        }
+    }
+
+    private func restoreCollectionPickerFocus() {
+        Task { @MainActor in
+            await Task.yield()
+            isCollectionPickerButtonFocused = true
+        }
     }
 }
 
@@ -670,127 +757,5 @@ private struct LibraryEmptyStateView: View {
         .padding(DesignMetrics.space24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
-    }
-}
-
-/// A single recursive destination menu is shared by the list and import flows.
-/// The system Inbox remains an ordinary selectable destination, which makes
-/// returning an item there a one-click operation.
-struct FolderDestinationMenu: View {
-    let folders: [LibraryFolderNode]
-    var excluding: Set<UUID> = []
-    var selectedFolderID: UUID?
-    var systemFolderLabel = "移回收件箱"
-    let onSelect: (LibraryFolderNode) -> Void
-
-    var body: some View {
-        ForEach(folders) { folder in
-            FolderDestinationMenuBranch(
-                folder: folder,
-                excluding: excluding,
-                selectedFolderID: selectedFolderID,
-                systemFolderLabel: systemFolderLabel,
-                onSelect: onSelect
-            )
-        }
-    }
-}
-
-private struct FolderDestinationMenuBranch: View {
-    let folder: LibraryFolderNode
-    let excluding: Set<UUID>
-    let selectedFolderID: UUID?
-    let systemFolderLabel: String
-    let onSelect: (LibraryFolderNode) -> Void
-
-    var body: some View {
-        if excluding.contains(folder.id) {
-            ForEach(folder.children) { child in
-                FolderDestinationMenuBranch(
-                    folder: child,
-                    excluding: excluding,
-                    selectedFolderID: selectedFolderID,
-                    systemFolderLabel: systemFolderLabel,
-                    onSelect: onSelect
-                )
-            }
-        } else if folder.children.isEmpty {
-            Button {
-                onSelect(folder)
-            } label: {
-                destinationMenuLabel
-            }
-        } else {
-            Menu(folder.name) {
-                Button {
-                    onSelect(folder)
-                } label: {
-                    destinationMenuLabel
-                }
-                Divider()
-                ForEach(folder.children) { child in
-                    FolderDestinationMenuBranch(
-                        folder: child,
-                        excluding: excluding,
-                        selectedFolderID: selectedFolderID,
-                        systemFolderLabel: systemFolderLabel,
-                        onSelect: onSelect
-                    )
-                }
-            }
-        }
-    }
-
-    private var destinationLabel: String {
-        folder.isSystemFolder ? systemFolderLabel : folder.name
-    }
-
-    @ViewBuilder
-    private var destinationMenuLabel: some View {
-        if selectedFolderID == folder.id {
-            Label(destinationLabel, systemImage: "checkmark")
-                .accessibilityLabel(destinationLabel)
-        } else {
-            Text(destinationLabel)
-                .accessibilityLabel(destinationLabel)
-        }
-    }
-}
-
-private struct LibraryCollectionFolderMenuBranch: View {
-    let folder: LibraryFolderNode
-    let selectedFolderID: UUID?
-    let onSelect: (LibraryFolderNode) -> Void
-
-    var body: some View {
-        if folder.children.isEmpty {
-            folderButton
-        } else {
-            Menu(folder.name) {
-                folderButton
-                Divider()
-                ForEach(folder.children) { child in
-                    LibraryCollectionFolderMenuBranch(
-                        folder: child,
-                        selectedFolderID: selectedFolderID,
-                        onSelect: onSelect
-                    )
-                }
-            }
-        }
-    }
-
-    private var folderButton: some View {
-        Button {
-            onSelect(folder)
-        } label: {
-            if selectedFolderID == folder.id {
-                Label(folder.name, systemImage: "checkmark")
-            } else {
-                Text(folder.name)
-            }
-        }
-        .accessibilityLabel(folder.name)
-        .accessibilityIdentifier("library.folder.\(folder.id.uuidString)")
     }
 }

@@ -8,13 +8,10 @@ struct PodPinSettingsView: View {
     @Environment(\.designPalette) private var palette
 
     var body: some View {
-        ScrollView {
-            playbackSection
-                .padding(.vertical, DesignMetrics.space8)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
-        .background(palette.background)
-        .tint(palette.accent)
+        playbackSection
+            .padding(.vertical, DesignMetrics.space8)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .tint(palette.accent)
     }
 
     private var playbackSection: some View {

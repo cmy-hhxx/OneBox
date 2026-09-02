@@ -132,6 +132,10 @@ actor MarketDatabase {
             .appendingPathComponent(defaultFileName, isDirectory: false)
     }
 
+    func close() throws {
+        try databaseQueue.close()
+    }
+
     func inbox() throws -> LibraryFolder {
         guard let inbox = try folder(id: LibraryFolder.inboxID) else {
             throw MarketDatabaseError.folderNotFound(LibraryFolder.inboxID)

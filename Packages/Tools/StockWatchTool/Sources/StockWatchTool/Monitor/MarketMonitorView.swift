@@ -59,6 +59,7 @@ struct MarketMonitorView: View {
                 InstrumentRowView(
                     instrument: instrument,
                     quote: monitored?.quote,
+                    chart: monitored?.chart,
                     status: monitored?.status ?? .idle,
                     statusMessage: monitored?.statusMessage
                 )

@@ -23,6 +23,5 @@ struct ImportEntryContext: Hashable, Identifiable, Sendable {
 enum LibraryDestination: Hashable, Sendable {
     case library
     case importLink(ImportEntryContext)
-    case settings
     case nowPlaying
 }

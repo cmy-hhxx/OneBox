@@ -94,7 +94,7 @@ struct PodPinLibraryView: View {
         case .folderEditor(let request):
             FolderEditorSheet(
                 request: request,
-                folders: store.folders,
+                folderTree: store.folderTree(),
                 onSave: { name, parentID, completion in
                     saveFolderEditor(
                         request,
@@ -107,11 +107,24 @@ struct PodPinLibraryView: View {
         case .moveFolder(let folder):
             FolderDestinationSheet(
                 title: "移动“\(folder.name)”",
-                folders: store.folders,
+                folders: store.folderTree(),
                 excluding: excludedFolderDestinations(for: folder.id),
                 selectedDestination: folder.parentID
             ) { parentID in
                 store.performLibraryOperation { await store.moveFolder(folder.id, to: parentID) }
+            }
+        case .moveItem(let item):
+            FolderDestinationSheet(
+                title: "移动“\(item.title)”",
+                folders: store.folderTree(),
+                excluding: [item.folderID],
+                selectedDestination: item.folderID,
+                includesLibraryRoot: false
+            ) { destinationID in
+                guard let destinationID else { return }
+                store.performLibraryOperation {
+                    await store.moveItem(item.id, to: destinationID)
+                }
             }
         }
     }
@@ -157,6 +170,7 @@ struct PodPinLibraryView: View {
             folders: store.folderTree(),
             selectedCollection: $store.selectedCollection,
             destination: $navigator.destination,
+            isSettingsPresented: navigator.isSettingsPresented,
             selectedFolderTitle: store.selectedFolderTitle(),
             items: store.visibleItems(),
             itemsPhase: store.itemsPhase,
@@ -166,52 +180,45 @@ struct PodPinLibraryView: View {
             isPlaying: store.isPlaying,
             downloadSession: store.downloadSession,
             playbackTimeline: store.playbackPresentation.timeline,
-            importContent: AnyView(
-                ImportWorkspaceView(
-                    store: store,
-                    entryContext: importEntryContext,
-                    onImportSucceeded: { importedItemID in
-                        selectedItemID = importedItemID
-                    },
-                    onRequestFolderEditor: { request in
-                        sheet = .folderEditor(request)
-                    }
-                )
-                .id(importEntryContext.id)
+            importContent: ImportWorkspaceView(
+                store: store,
+                entryContext: importEntryContext,
+                onImportSucceeded: { importedItemID in
+                    selectedItemID = importedItemID
+                },
+                onRequestFolderEditor: { request in
+                    sheet = .folderEditor(request)
+                }
+            )
+            .id(importEntryContext.id),
+            settingsContent: PodPinSettingsView(
+                preferences: store.preferences,
+                onSetPlaybackRate: { store.setPlaybackRate($0) }
             ),
-            settingsContent: AnyView(
-                PodPinSettingsView(
-                    preferences: store.preferences,
-                    onSetPlaybackRate: { store.setPlaybackRate($0) }
-                )
-            ),
-            nowPlayingContent: AnyView(nowPlayingWorkspace),
-            compactPlayerContent: AnyView(
-                CompactPlayerBar(
-                    identity: store.playbackPresentation.identity,
-                    queue: store.playbackQueue.session,
-                    timeline: store.playbackPresentation.timeline,
-                    onTogglePlayback: { store.togglePlayback() },
-                    onRetryPlayback: { store.retryPlayback() },
-                    onSkipBackward: { store.skipBackward() },
-                    onSkipForward: { store.skipForward() },
-                    onSeek: { store.seek(to: $0) },
-                    onSetRate: { store.setPlaybackRate($0) },
-                    onImport: { navigator.openImport(in: store.selectedFolderID) },
-                    onOpenQueue: navigator.showNowPlaying
-                )
+            nowPlayingContent: nowPlayingWorkspace,
+            compactPlayerContent: CompactPlayerBar(
+                identity: store.playbackPresentation.identity,
+                queue: store.playbackQueue.session,
+                timeline: store.playbackPresentation.timeline,
+                onTogglePlayback: { store.togglePlayback() },
+                onRetryPlayback: { store.retryPlayback() },
+                onSkipBackward: { store.skipBackward() },
+                onSkipForward: { store.skipForward() },
+                onSeek: { store.seek(to: $0) },
+                onSetRate: { store.setPlaybackRate($0) },
+                onImport: { navigator.openImport(in: store.selectedFolderID) },
+                onOpenQueue: navigator.showNowPlaying
             ),
             onRequestFolderEditor: { request in
                 sheet = .folderEditor(request)
             },
             onFolderAction: handleFolderAction,
             onItemAction: handleItemAction,
-            onMoveItem: { itemID, folderID in
-                store.performLibraryOperation { await store.moveItem(itemID, to: folderID) }
-            },
             onRetryItems: store.retrySelectedFolder,
             onLoadMoreItems: store.loadMoreItems,
-            onShowNowPlaying: navigator.showNowPlaying
+            onShowNowPlaying: navigator.showNowPlaying,
+            onToggleSettings: navigator.toggleSettings,
+            onCloseSettings: navigator.closeSettings
         )
     }
 
@@ -299,6 +306,8 @@ struct PodPinLibraryView: View {
         case .enqueueLast:
             guard let item = store.items.first(where: { $0.id == row.id }) else { return }
             store.enqueueLast(item)
+        case .move:
+            sheet = .moveItem(row)
         case .download, .retryDownload:
             guard let item = store.items.first(where: { $0.id == row.id }) else { return }
             store.startDownload(item)
@@ -633,11 +642,13 @@ private struct ImportVerificationRoute: View {
 private enum LibrarySheet: Identifiable {
     case folderEditor(FolderEditorRequest)
     case moveFolder(LibraryFolderMoveTarget)
+    case moveItem(LibraryItemRow)
 
     var id: String {
         switch self {
         case .folderEditor(let request): "folder-editor-\(request.id.uuidString)"
         case .moveFolder(let folder): "move-folder-\(folder.id.uuidString)"
+        case .moveItem(let item): "move-item-\(item.id.uuidString)"
         }
     }
 }
@@ -656,9 +667,10 @@ extension LibraryFolderNode {
 
 private struct FolderDestinationSheet: View {
     let title: String
-    let folders: [LibraryFolder]
+    let folders: [LibraryFolderNode]
     let excluding: Set<UUID>
     let selectedDestination: UUID?
+    var includesLibraryRoot = true
     let onConfirm: (UUID?) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -671,13 +683,18 @@ private struct FolderDestinationSheet: View {
                 .font(DesignTypography.sectionTitle)
                 .foregroundStyle(palette.textPrimary)
 
-            Picker("目标文件夹", selection: $destinationID) {
-                Text("资料库根目录").tag(nil as UUID?)
-                ForEach(flattenedFolders, id: \.id) { folder in
-                    Text(folder.label).tag(Optional(folder.id))
-                }
-            }
-            .font(DesignTypography.body)
+            Text("目标文件夹")
+                .font(DesignTypography.bodyMedium)
+                .foregroundStyle(palette.textPrimary)
+
+            LibraryFolderTreePicker(
+                folders: folders,
+                excluding: excluding,
+                selectedFolderID: destinationID,
+                includesLibraryRoot: includesLibraryRoot,
+                onSelect: { destinationID = $0 }
+            )
+            .frame(minHeight: 180, maxHeight: 300)
 
             HStack {
                 Button("取消") { dismiss() }
@@ -693,29 +710,9 @@ private struct FolderDestinationSheet: View {
             .font(DesignTypography.body)
         }
         .padding(DesignMetrics.space24)
-        .frame(width: 380)
+        .frame(width: 420)
         .background(palette.background)
         .onAppear { destinationID = selectedDestination }
-    }
-
-    private var flattenedFolders: [(id: UUID, label: String)] {
-        func append(
-            _ folder: LibraryFolder,
-            path: String?,
-            into result: inout [(UUID, String)]
-        ) {
-            guard !excluding.contains(folder.id) else { return }
-            let label = [path, folder.name].compactMap { $0 }.joined(separator: " / ")
-            result.append((folder.id, label))
-            for child in folders.filter({ $0.parentID == folder.id }) {
-                append(child, path: label, into: &result)
-            }
-        }
-        var result: [(UUID, String)] = []
-        for root in folders.filter({ $0.parentID == nil }) {
-            append(root, path: nil, into: &result)
-        }
-        return result
     }
 }
 

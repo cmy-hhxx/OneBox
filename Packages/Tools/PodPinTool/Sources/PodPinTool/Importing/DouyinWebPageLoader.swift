@@ -77,8 +77,9 @@ private final class DouyinWebSession: NSObject, WKNavigationDelegate {
                 if let rendered = try await renderedPage(from: snapshot) {
                     return rendered
                 }
-                _ = try? await webView.evaluateJavaScript(
-                    "document.querySelector('video')?.play().catch(() => {})"
+                _ = try? await evaluateJavaScript(
+                    "document.querySelector('video')?.play().catch(() => {})",
+                    timeout: .seconds(1)
                 )
                 try await Task.sleep(for: .milliseconds(400))
             }
@@ -151,8 +152,34 @@ private final class DouyinWebSession: NSObject, WKNavigationDelegate {
         )
     }
 
+    private func evaluateJavaScript(_ script: String, timeout: Duration) async throws -> Any? {
+        let result = await withCooperativeTimeout(timeout, owner: timeoutTaskOwner) {
+            @MainActor [weak self] in
+            guard let self, !isDestroyed else { return WebKitJavaScriptResult.cancelled }
+            do {
+                let value = try await webView.evaluateJavaScript(script)
+                return WebKitJavaScriptResult.value(value)
+            } catch is CancellationError {
+                return WebKitJavaScriptResult.cancelled
+            } catch {
+                return WebKitJavaScriptResult.failed(error)
+            }
+        }
+        switch result {
+        case .timedOut:
+            try Task.checkCancellation()
+            throw DouyinPageLoadError.timeout("javascript")
+        case .value(.cancelled):
+            throw CancellationError()
+        case .value(.failed(let error)):
+            throw error
+        case .value(.value(let value)):
+            return value
+        }
+    }
+
     private func readSnapshot() async throws -> Snapshot {
-        let value = try await webView.evaluateJavaScript(Self.snapshotScript)
+        let value = try await evaluateJavaScript(Self.snapshotScript, timeout: .seconds(5))
         guard let json = value as? String, let data = json.data(using: .utf8) else {
             throw ContentImportError.malformedResponse
         }
@@ -216,6 +243,12 @@ private final class DouyinWebSession: NSObject, WKNavigationDelegate {
             navigationContinuation = nil
             continuation.resume(throwing: CancellationError())
         }
+    }
+
+    private enum WebKitJavaScriptResult: @unchecked Sendable {
+        case value(Any?)
+        case cancelled
+        case failed(any Error)
     }
 
     private enum WebKitWaitResult: @unchecked Sendable {

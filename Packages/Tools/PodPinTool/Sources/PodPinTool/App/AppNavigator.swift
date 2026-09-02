@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 final class AppNavigator: ObservableObject {
     @Published var destination: LibraryDestination = .library
+    @Published private(set) var isSettingsPresented = false
 
     private var nowPlayingReturnDestination: LibraryDestination?
 
@@ -26,5 +27,17 @@ final class AppNavigator: ObservableObject {
         guard case .nowPlaying = destination else { return }
         destination = nowPlayingReturnDestination ?? .library
         nowPlayingReturnDestination = nil
+    }
+
+    func showSettings() {
+        isSettingsPresented = true
+    }
+
+    func closeSettings() {
+        isSettingsPresented = false
+    }
+
+    func toggleSettings() {
+        isSettingsPresented.toggle()
     }
 }

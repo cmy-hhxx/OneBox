@@ -99,6 +99,34 @@ extension MarketDatabase {
         }
     }
 
+    /// Activates only if the persisted current item still matches the request's
+    /// expected predecessor. A stale readiness callback cannot overwrite a
+    /// newer user-selected current item.
+    func activateQueueItem(_ itemID: UUID, onlyIfCurrentItemID expectedID: UUID?) throws
+        -> AudioItem?
+    {
+        try databaseQueue.write { database in
+            let current: String? = try String.fetchOne(
+                database, sql: "SELECT current_item_id FROM player_state WHERE singleton = 1")
+            guard current == expectedID?.uuidString.lowercased() else { return nil }
+            guard let item = try Self.fetchItem(id: itemID, in: database) else {
+                throw MarketDatabaseError.itemNotFound(itemID)
+            }
+            try database.execute(
+                sql: "DELETE FROM playback_queue WHERE item_id = ?",
+                arguments: [Self.identifier(itemID)])
+            guard database.changesCount > 0 else {
+                throw MarketDatabaseError.queueItemNotFound(itemID)
+            }
+            try Self.replaceQueuePositions(with: Self.queueItemIDs(in: database), in: database)
+            try database.execute(
+                sql:
+                    "UPDATE player_state SET current_item_id = ?, updated_at_ms = ? WHERE singleton = 1",
+                arguments: [Self.identifier(itemID), Self.milliseconds(.now)])
+            return item
+        }
+    }
+
     static func fetchPlaybackQueue(in database: Database) throws -> [PlaybackQueueEntry] {
         try Row.fetchAll(
             database,

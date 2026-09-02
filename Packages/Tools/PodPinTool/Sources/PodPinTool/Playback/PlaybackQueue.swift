@@ -89,6 +89,19 @@ final class PlaybackQueueController {
         return item
     }
 
+    func activateAfterPlaybackIsReady(_ itemID: UUID, onlyIfCurrentItemID expectedID: UUID?)
+        async throws -> AudioItem?
+    {
+        guard let repository else { throw PlaybackQueueControllerError.unconfigured }
+        guard
+            let item = try await repository.activateQueueItem(
+                itemID, onlyIfCurrentItemID: expectedID)
+        else { return nil }
+        session.replaceEntries(try await repository.playbackQueue())
+        session.presentError(nil)
+        return item
+    }
+
     func retainFailedHead(message: String) {
         session.presentError(message)
     }

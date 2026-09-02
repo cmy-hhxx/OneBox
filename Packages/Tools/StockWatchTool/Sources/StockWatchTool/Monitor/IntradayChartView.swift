@@ -54,35 +54,20 @@ struct ReviewMarkerLayout: Equatable {
 }
 
 struct IntradayChartView: View {
-    let points: [MinuteBar]
-    let market: Market
-    let dayOpen: Double
-    let previousClose: Double
-    let colorRole: MarketColorRole
-    var showReviewMarkers = false
+    let chart: PreparedIntradayChart
 
     @Environment(\.designPalette) private var palette
 
     var body: some View {
-        let preparation = IntradayChartPreparation(
-            points: points,
-            market: market,
-            dayOpen: dayOpen,
-            previousClose: previousClose,
-            showReviewMarkers: showReviewMarkers
-        )
-        let plottedPoints = preparation.points
-        let closes = plottedPoints.map(\.close)
-        let segmentRoles = IntradaySegmentColoring.roles(
-            closes: closes,
-            market: market
-        )
-        let reviewMarkers = preparation.reviewMarkers
+        let plottedPoints = chart.points
+        let closes = chart.closes
+        let segmentRoles = chart.segmentRoles
+        let reviewMarkers = chart.reviewMarkers
 
         Canvas { context, size in
             guard plottedPoints.count > 1 else { return }
 
-            let range = max(preparation.high - preparation.low, 0.0001)
+            let range = max(chart.high - chart.low, 0.0001)
             let isCompact = size.height < 52
             let markerInsets = ReviewMarkerLayout.plotInsets(
                 hasMarkers: reviewMarkers != nil,
@@ -95,12 +80,12 @@ struct IntradayChartView: View {
                 let x =
                     markerInsets.horizontal
                     + plotWidth * CGFloat(min(max(progress, 0), 1))
-                let normalized = (price - preparation.low) / range
+                let normalized = (price - chart.low) / range
                 let y = markerInsets.vertical + plotHeight * (1 - CGFloat(normalized))
                 return CGPoint(x: x, y: y)
             }
 
-            let waterY = coordinate(progress: 0, price: previousClose).y
+            let waterY = coordinate(progress: 0, price: chart.previousClose).y
             var waterline = Path()
             waterline.move(to: CGPoint(x: markerInsets.horizontal, y: waterY))
             waterline.addLine(to: CGPoint(x: size.width - markerInsets.horizontal, y: waterY))
@@ -150,7 +135,7 @@ struct IntradayChartView: View {
 
             if let last = plottedPoints.last {
                 let point = coordinate(progress: last.progress, price: last.close)
-                let terminalRole = segmentRoles.last ?? colorRole
+                let terminalRole = segmentRoles.last ?? chart.fallbackColorRole
                 context.fill(
                     Path(
                         ellipseIn: CGRect(
@@ -208,10 +193,10 @@ struct IntradayChartView: View {
         }
         .accessibilityLabel(tr("当日分时曲线"))
         .accessibilityValue(
-            showReviewMarkers ? reviewMarkersExplanation(for: reviewMarkers) : ""
+            reviewMarkers != nil ? reviewMarkersExplanation(for: reviewMarkers) : ""
         )
         .help(
-            showReviewMarkers
+            reviewMarkers != nil
                 ? reviewMarkersExplanation(for: reviewMarkers)
                 : tr("当日分时曲线")
         )

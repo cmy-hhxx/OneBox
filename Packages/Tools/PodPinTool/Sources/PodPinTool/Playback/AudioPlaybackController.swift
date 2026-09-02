@@ -233,6 +233,7 @@ final class AudioPlaybackController: NSObject, ObservableObject {
     func play() {
         guard let player, player.currentItem != nil, currentItem != nil else { return }
         if state == .finished {
+            didEmitPlaybackFinished = false
             shouldAutoplayWhenReady = true
             state = .replayPending
             notifyStateChanged()

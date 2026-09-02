@@ -45,7 +45,7 @@ enum StockWatchStartupError: Error, Sendable {
 final class StockWatchLifecycleCoordinator {
     private struct Waiter {
         let id: UUID
-        let continuation: CheckedContinuation<Void, Never>
+        let state: StockWatchLeaseWaiterState
     }
 
     private var activeLeaseID: UUID?
@@ -58,9 +58,18 @@ final class StockWatchLifecycleCoordinator {
         if activeLeaseID == nil {
             activeLeaseID = id
         } else {
-            await withCheckedContinuation { continuation in
-                waiters.append(Waiter(id: id, continuation: continuation))
+            let state = StockWatchLeaseWaiterState()
+            let acquired = await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    state.install(continuation)
+                    if !state.isResolved {
+                        waiters.append(Waiter(id: id, state: state))
+                    }
+                }
+            } onCancel: {
+                state.cancel()
             }
+            guard acquired else { return nil }
         }
 
         guard !Task.isCancelled else {
@@ -134,13 +143,14 @@ final class StockWatchLifecycleCoordinator {
 
     func release(_ leaseID: UUID) {
         guard activeLeaseID == leaseID else { return }
-        guard !waiters.isEmpty else {
-            activeLeaseID = nil
-            return
+        while !waiters.isEmpty {
+            let waiter = waiters.removeFirst()
+            if waiter.state.resume(acquired: true) {
+                activeLeaseID = waiter.id
+                return
+            }
         }
-        let waiter = waiters.removeFirst()
-        activeLeaseID = waiter.id
-        waiter.continuation.resume()
+        activeLeaseID = nil
     }
 
     private static func closeFailure(
@@ -158,6 +168,48 @@ final class StockWatchLifecycleCoordinator {
                 databaseCloseMessage: error.localizedDescription
             )
         }
+    }
+}
+
+private final class StockWatchLeaseWaiterState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Bool, Never>?
+    private var resolved = false
+
+    var isResolved: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return resolved
+    }
+
+    func install(_ continuation: CheckedContinuation<Bool, Never>) {
+        lock.lock()
+        guard !resolved else {
+            lock.unlock()
+            continuation.resume(returning: false)
+            return
+        }
+        self.continuation = continuation
+        lock.unlock()
+    }
+
+    func cancel() {
+        _ = resume(acquired: false)
+    }
+
+    @discardableResult
+    func resume(acquired: Bool) -> Bool {
+        lock.lock()
+        guard !resolved else {
+            lock.unlock()
+            return false
+        }
+        resolved = true
+        let continuation = continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: acquired)
+        return true
     }
 }
 

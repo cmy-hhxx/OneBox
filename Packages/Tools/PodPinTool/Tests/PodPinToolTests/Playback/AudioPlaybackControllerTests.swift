@@ -174,6 +174,10 @@ final class AudioPlaybackControllerTests: XCTestCase {
             duration: metadata.duration
         )
         let controller = AudioPlaybackController()
+        var finishCount = 0
+        controller.onPlaybackFinished = { finishedID in
+            if finishedID == item.id { finishCount += 1 }
+        }
 
         controller.load(item: item, url: stream.url, autoplay: false)
         try await waitUntil { controller.state == .paused }
@@ -182,6 +186,7 @@ final class AudioPlaybackControllerTests: XCTestCase {
 
         controller.play()
         try await waitUntil({ controller.state == .finished }, timeout: 3)
+        XCTAssertEqual(finishCount, 1)
 
         controller.play()
         XCTAssertEqual(controller.state, .replayPending)
@@ -189,6 +194,9 @@ final class AudioPlaybackControllerTests: XCTestCase {
         XCTAssertEqual(controller.state, .replayPending)
 
         try await waitUntil { controller.state == .playing }
+        controller.seek(to: max((controller.duration - 0.3), 0))
+        try await waitUntil({ controller.state == .finished }, timeout: 3)
+        XCTAssertEqual(finishCount, 2)
     }
 
     @MainActor

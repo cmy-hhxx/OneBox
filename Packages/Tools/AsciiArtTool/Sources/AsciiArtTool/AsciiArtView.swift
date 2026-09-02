@@ -34,7 +34,7 @@ struct AsciiArtView: View {
 
                 if session.isInspectorPresented {
                     AsciiInspector(session: session, close: closeInspector)
-                        .frame(width: 248)
+                        .frame(width: DesignMetrics.inspectorWidth)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }

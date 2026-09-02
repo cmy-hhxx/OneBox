@@ -14,15 +14,17 @@ enum EastMoneyParser {
             let close = Double(values[2]),
             let high = Double(values[3]),
             let low = Double(values[4]),
-            [open, close, high, low].allSatisfy({ $0.isFinite && $0 > 0 })
+            [open, close, high, low].allSatisfy({ $0.isFinite && $0 > 0 }),
+            high >= max(open, close),
+            low <= min(open, close)
         else { return nil }
 
         return MinuteBar(
             time: date,
             open: open,
             close: close,
-            high: max(open, close, high, low),
-            low: min(open, close, high, low)
+            high: high,
+            low: low
         )
     }
 
@@ -152,9 +154,21 @@ enum TencentParser {
 
 private enum ProviderDateParser {
     static func minute(_ raw: String, timeZone: TimeZone) -> Date? {
-        let digits = Array(raw.utf8.filter { (48...57).contains($0) })
-        guard digits.count >= 12 else { return nil }
-        return date(from: Array(digits.prefix(12)), timeZone: timeZone)
+        let bytes = Array(raw.utf8)
+        guard bytes.count == 16,
+            bytes[4] == 45,
+            bytes[7] == 45,
+            bytes[10] == 32,
+            bytes[13] == 58
+        else { return nil }
+        let digits =
+            Array(bytes[0..<4])
+            + Array(bytes[5..<7])
+            + Array(bytes[8..<10])
+            + Array(bytes[11..<13])
+            + Array(bytes[14..<16])
+        guard digits.allSatisfy(isASCIIDigit) else { return nil }
+        return date(from: digits, timeZone: timeZone)
     }
 
     static func tencentSessionDate(

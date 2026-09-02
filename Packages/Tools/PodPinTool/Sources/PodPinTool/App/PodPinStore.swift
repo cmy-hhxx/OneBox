@@ -139,6 +139,7 @@ final class PodPinStore: ObservableObject {
     private var mediaStore: PodPinMediaStore?
     private var isStarted = false
     private var isShutDown = false
+    private var deletingItemIDs = Set<UUID>()
     private var playbackRequestGeneration: UInt = 0
     private var itemRefreshGeneration: UInt = 0
     private var startupTask: Task<Void, Never>?
@@ -154,6 +155,7 @@ final class PodPinStore: ObservableObject {
     private var pendingBrowserLease: BrowserAccessLease?
     private var playbackRecoveryAttempts = Set<UUID>()
     private var pendingQueueConsumptionItemID: UUID?
+    private var pendingQueueConsumptionExpectedCurrentID: UUID?
     /// Keeps the focused player responsive while an online source is being
     /// resolved. The actual player remains untouched until a usable stream
     /// URL arrives, so a failed request can fall back to the prior item.
@@ -247,10 +249,15 @@ final class PodPinStore: ObservableObject {
     ) async throws -> (database: MarketDatabase, mediaStore: PodPinMediaStore) {
         try Task.checkCancellation()
         let database = try databaseFactory()
-        try Task.checkCancellation()
-        let mediaStore = try mediaStoreFactory()
-        try Task.checkCancellation()
-        return (database, mediaStore)
+        do {
+            try Task.checkCancellation()
+            let mediaStore = try mediaStoreFactory()
+            try Task.checkCancellation()
+            return (database, mediaStore)
+        } catch {
+            try? await database.close()
+            throw error
+        }
     }
 
     func resumeUI() async {
@@ -295,6 +302,7 @@ final class PodPinStore: ObservableObject {
         startupPhase = .loading
         defer { isStarting = false }
 
+        var openedDatabase: MarketDatabase?
         do {
             let resources = try await Self.openPersistenceResources(
                 databaseFactory: databaseFactory,
@@ -303,18 +311,31 @@ final class PodPinStore: ObservableObject {
             try Task.checkCancellation()
             let database = resources.database
             let mediaStore = resources.mediaStore
+            openedDatabase = database
             self.database = database
             self.mediaStore = mediaStore
             playbackQueue.configure(repository: database)
             let interruptedDownloads = try await database.recoverInterruptedDownloads()
             try Task.checkCancellation()
-            guard !isShutDown else { return }
+            guard !isShutDown else { throw CancellationError() }
             for itemID in interruptedDownloads {
                 do {
                     try await mediaStore.removeDownloadedAudio(for: itemID)
                 } catch {
-                    // Recovery continues so a stale artifact cannot block the
-                    // database repair; the cleanup failure remains observable.
+                    // Keep the marker so the next launch retries filesystem cleanup.
+                    do {
+                        _ = try await database.updateDownloadState(
+                            for: itemID,
+                            state: .downloading
+                        )
+                    } catch {
+                        await AppDiagnostics.shared.record(
+                            level: .warning,
+                            category: "database",
+                            event: "interrupted-download.marker-restore.failed",
+                            error: PresentedError.from(error)
+                        )
+                    }
                     await AppDiagnostics.shared.record(
                         level: .warning, category: "storage",
                         event: "interrupted-download.cleanup.failed",
@@ -322,14 +343,14 @@ final class PodPinStore: ObservableObject {
                 }
             }
             try Task.checkCancellation()
-            guard !isShutDown else { return }
+            guard !isShutDown else { throw CancellationError() }
             isStarted = true
             try await playbackQueue.reload()
             try Task.checkCancellation()
-            guard !isShutDown else { return }
+            guard !isShutDown else { throw CancellationError() }
             let refreshedFolders = try await database.allFolders()
             try Task.checkCancellation()
-            guard !isShutDown else { return }
+            guard !isShutDown else { throw CancellationError() }
             cachedFolderTree = makeFolderTree(from: refreshedFolders)
             folders = refreshedFolders
             librarySession.selectedCollection = preferences.lastLibraryCollection
@@ -341,10 +362,10 @@ final class PodPinStore: ObservableObject {
             }
             try await refreshItemsOrThrow(for: itemRefreshRequest())
             try Task.checkCancellation()
-            guard !isShutDown else { return }
+            guard !isShutDown else { throw CancellationError() }
             replaceCurrentItemIfNeeded(try await database.currentPlaybackItem())
             try Task.checkCancellation()
-            guard !isShutDown else { return }
+            guard !isShutDown else { throw CancellationError() }
             if let currentItem,
                 currentItem.storageKind == .offline
             {
@@ -357,10 +378,10 @@ final class PodPinStore: ObservableObject {
                 if !containsLocalMedia {
                     _ = try await database.updateDownloadState(for: currentItem.id, state: .failed)
                     try Task.checkCancellation()
-                    guard !isShutDown else { return }
+                    guard !isShutDown else { throw CancellationError() }
                     replaceCurrentItemIfNeeded(try await database.item(id: currentItem.id))
                     try Task.checkCancellation()
-                    guard !isShutDown else { return }
+                    guard !isShutDown else { throw CancellationError() }
                 }
             }
             // A crash can occur after persisting the replacement current item
@@ -371,14 +392,19 @@ final class PodPinStore: ObservableObject {
             {
                 try await playbackQueue.remove(currentItem.id)
                 try Task.checkCancellation()
-                guard !isShutDown else { return }
+                guard !isShutDown else { throw CancellationError() }
             }
             playbackController.setRate(preferences.playbackRate)
             playbackController.setVolume(preferences.playbackVolume)
             synchronizePlaybackPresentation()
+            openedDatabase = nil
             startupPhase = .ready
         } catch {
             isStarted = false
+            if let openedDatabase {
+                try? await openedDatabase.close()
+            }
+            await nowPlayingController.deactivate()
             if isShutDown || isCancellation(error) {
                 database = nil
                 mediaStore = nil
@@ -1053,6 +1079,7 @@ final class PodPinStore: ObservableObject {
         playbackRequestGeneration &+= 1
         let requestGeneration = playbackRequestGeneration
         pendingQueueConsumptionItemID = nil
+        pendingQueueConsumptionExpectedCurrentID = nil
         do {
             try Task.checkCancellation()
             let database = try requireDatabase()
@@ -1103,10 +1130,16 @@ final class PodPinStore: ObservableObject {
             }
 
             try Task.checkCancellation()
+            let persistedCurrentID = try await database.currentPlaybackItem()?.id
+            guard playbackRequestGeneration == requestGeneration else { return }
             if !consumesQueueEntry {
                 try await database.setCurrentPlaybackItem(item.id)
             }
             guard playbackRequestGeneration == requestGeneration else { return }
+            pendingQueueConsumptionExpectedCurrentID =
+                consumesQueueEntry
+                ? persistedCurrentID
+                : nil
             pendingQueueConsumptionItemID = consumesQueueEntry ? item.id : nil
             resolvingPlaybackItem = nil
             playbackController.load(
@@ -1202,6 +1235,11 @@ final class PodPinStore: ObservableObject {
     }
 
     func removeQueueItem(_ itemID: UUID) {
+        if pendingQueueConsumptionItemID == itemID {
+            playbackRequestGeneration &+= 1
+            pendingQueueConsumptionItemID = nil
+            pendingQueueConsumptionExpectedCurrentID = nil
+        }
         launchOwnedTask { [weak self] in
             guard let self else { return }
             do {
@@ -1224,6 +1262,11 @@ final class PodPinStore: ObservableObject {
     }
 
     func clearPlaybackQueue() {
+        if pendingQueueConsumptionItemID != nil {
+            playbackRequestGeneration &+= 1
+            pendingQueueConsumptionItemID = nil
+            pendingQueueConsumptionExpectedCurrentID = nil
+        }
         launchOwnedTask { [weak self] in
             guard let self else { return }
             do {
@@ -1272,10 +1315,20 @@ final class PodPinStore: ObservableObject {
 
     private func consumeReadyQueueItemIfNeeded(_ itemID: UUID) async {
         guard pendingQueueConsumptionItemID == itemID else { return }
+        let requestGeneration = playbackRequestGeneration
+        let expectedCurrentID = pendingQueueConsumptionExpectedCurrentID
         do {
-            let activatedItem = try await playbackQueue.activateAfterPlaybackIsReady(itemID)
-            guard pendingQueueConsumptionItemID == itemID else { return }
+            guard requestGeneration == playbackRequestGeneration,
+                pendingQueueConsumptionItemID == itemID
+            else { return }
+            let activatedItem = try await playbackQueue.activateAfterPlaybackIsReady(
+                itemID, onlyIfCurrentItemID: expectedCurrentID)
+            guard let activatedItem,
+                requestGeneration == playbackRequestGeneration,
+                pendingQueueConsumptionItemID == itemID
+            else { return }
             pendingQueueConsumptionItemID = nil
+            pendingQueueConsumptionExpectedCurrentID = nil
             replaceCurrentItemIfNeeded(activatedItem)
             synchronizePlaybackPresentation()
         } catch {
@@ -1605,6 +1658,9 @@ final class PodPinStore: ObservableObject {
     }
 
     func deleteItem(_ id: UUID) async {
+        guard !deletingItemIDs.contains(id) else { return }
+        deletingItemIDs.insert(id)
+        defer { deletingItemIDs.remove(id) }
         guard activeDownloadItemID != id else {
             userFacingError = .message("正在下载这条音频，请先取消下载。")
             return
@@ -1773,8 +1829,17 @@ final class PodPinStore: ObservableObject {
             return
         }
         if let index = items.firstIndex(where: { $0.id == item.id }) {
-            items[index] = item
-            cachedVisibleItems[index] = makeVisibleItem(from: item)
+            if selectedCollection == .recentlyPlayed {
+                items.remove(at: index)
+                cachedVisibleItems.remove(at: index)
+                let insertionIndex =
+                    items.firstIndex(where: { !isOrderedBefore($0, item) }) ?? items.endIndex
+                items.insert(item, at: insertionIndex)
+                cachedVisibleItems.insert(makeVisibleItem(from: item), at: insertionIndex)
+            } else {
+                items[index] = item
+                cachedVisibleItems[index] = makeVisibleItem(from: item)
+            }
             return
         }
         guard !canLoadMoreItems || items.count < 200 else { return }
@@ -1896,7 +1961,11 @@ final class PodPinStore: ObservableObject {
             }
         } catch {
             // Artwork is auxiliary source metadata. The audio item remains useful
-            // without it, so failure intentionally stays non-blocking.
+            // without it, so failure intentionally stays non-blocking. If deletion
+            // won the race, remove any directory recreated by the late response.
+            if (try? await database.item(id: itemID)) == nil {
+                try? await mediaStore.removeMedia(for: itemID)
+            }
         }
         await mediaStore.removeTemporaryArtwork(at: temporaryURL)
     }
@@ -1907,7 +1976,7 @@ final class PodPinStore: ObservableObject {
         listeningHistory: ListeningHistory,
         force: Bool
     ) {
-        guard let database else { return }
+        guard !deletingItemIDs.contains(id), let database else { return }
         if force { needsNowPlayingTimeSync = true }
         applyPlaybackUpdate(
             id: id,
@@ -1939,8 +2008,17 @@ final class PodPinStore: ObservableObject {
                 normalizedPosition, updated.duration ?? normalizedPosition)
             updated.listeningHistory = listeningHistory
             updated.lastPlayedAt = .now
-            items[index] = updated
-            cachedVisibleItems[index] = makeVisibleItem(from: updated)
+            if selectedCollection == .recentlyPlayed {
+                items.remove(at: index)
+                cachedVisibleItems.remove(at: index)
+                let insertionIndex =
+                    items.firstIndex(where: { !isOrderedBefore($0, updated) }) ?? items.endIndex
+                items.insert(updated, at: insertionIndex)
+                cachedVisibleItems.insert(makeVisibleItem(from: updated), at: insertionIndex)
+            } else {
+                items[index] = updated
+                cachedVisibleItems[index] = makeVisibleItem(from: updated)
+            }
             return
         }
         guard var updated = currentItem, updated.id == id else { return }

@@ -12,6 +12,10 @@ struct HTTPDownloadResponse: @unchecked Sendable {
 
 protocol HTTPTransporting: Sendable {
     func data(for request: URLRequest) async throws -> HTTPTransportResponse
+    func data(
+        for request: URLRequest,
+        redirectValidator: @escaping @Sendable (URL, URL) -> Bool
+    ) async throws -> HTTPTransportResponse
     func download(for request: URLRequest) async throws -> HTTPDownloadResponse
     func download(
         for request: URLRequest,
@@ -25,6 +29,13 @@ protocol HTTPTransporting: Sendable {
 }
 
 extension HTTPTransporting {
+    func data(
+        for request: URLRequest,
+        redirectValidator: @escaping @Sendable (URL, URL) -> Bool
+    ) async throws -> HTTPTransportResponse {
+        try await data(for: request)
+    }
+
     func download(for request: URLRequest) async throws -> HTTPDownloadResponse {
         let response = try await data(for: request)
         let temporaryURL = FileManager.default.temporaryDirectory
@@ -66,11 +77,26 @@ struct URLSessionHTTPTransport: HTTPTransporting {
                 throw ContentImportError.malformedResponse
             }
             return HTTPTransportResponse(data: data, response: response)
-        } catch is CancellationError {
-            throw ContentImportError.cancelled
-        } catch let error as ContentImportError {
-            throw error
         } catch {
+            if isURLSessionCancellation(error) { throw ContentImportError.cancelled }
+            if let error = error as? ContentImportError { throw error }
+            throw ContentImportError.platformUnavailable("网络请求失败，请稍后重试。")
+        }
+    }
+
+    func data(
+        for request: URLRequest,
+        redirectValidator: @escaping @Sendable (URL, URL) -> Bool
+    ) async throws -> HTTPTransportResponse {
+        do {
+            return try await HTTPDataOperation(
+                session: session,
+                request: request,
+                redirectValidator: redirectValidator
+            ).run()
+        } catch {
+            if isURLSessionCancellation(error) { throw ContentImportError.cancelled }
+            if let error = error as? ContentImportError { throw error }
             throw ContentImportError.platformUnavailable("网络请求失败，请稍后重试。")
         }
     }
@@ -92,11 +118,9 @@ struct URLSessionHTTPTransport: HTTPTransporting {
             ).run()
             progress(.complete)
             return response
-        } catch is CancellationError {
-            throw ContentImportError.cancelled
-        } catch let error as ContentImportError {
-            throw error
         } catch {
+            if isURLSessionCancellation(error) { throw ContentImportError.cancelled }
+            if let error = error as? ContentImportError { throw error }
             throw ContentImportError.platformUnavailable("网络请求失败，请稍后重试。")
         }
     }
@@ -116,13 +140,169 @@ struct URLSessionHTTPTransport: HTTPTransporting {
             ).run()
             progress(.complete)
             return response
-        } catch is CancellationError {
-            throw ContentImportError.cancelled
-        } catch let error as ContentImportError {
-            throw error
         } catch {
+            if isURLSessionCancellation(error) { throw ContentImportError.cancelled }
+            if let error = error as? ContentImportError { throw error }
             throw ContentImportError.platformUnavailable("网络请求失败，请稍后重试。")
         }
+    }
+}
+
+private func isURLSessionCancellation(_ error: Error) -> Bool {
+    if error is CancellationError { return true }
+    if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+    let nsError = error as NSError
+    return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
+}
+
+private final class HTTPDataRedirectDelegate: NSObject, URLSessionTaskDelegate,
+    @unchecked Sendable
+{
+    private let originalURL: URL
+    private let redirectValidator: @Sendable (URL, URL) -> Bool
+    private let onRejected: @Sendable () -> Void
+
+    init(
+        originalURL: URL,
+        redirectValidator: @escaping @Sendable (URL, URL) -> Bool,
+        onRejected: @escaping @Sendable () -> Void
+    ) {
+        self.originalURL = originalURL
+        self.redirectValidator = redirectValidator
+        self.onRejected = onRejected
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        guard let redirectedURL = request.url,
+            redirectValidator(originalURL, redirectedURL)
+        else {
+            onRejected()
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
+    }
+}
+
+private final class HTTPDataOperation: @unchecked Sendable {
+    private let baseSession: URLSession
+    private let request: URLRequest
+    private let redirectValidator: @Sendable (URL, URL) -> Bool
+    private let lock = NSLock()
+    private var ownedSession: URLSession?
+    private var task: URLSessionDataTask?
+    private var continuation: CheckedContinuation<HTTPTransportResponse, Error>?
+    private var isCancelled = false
+
+    init(
+        session: URLSession,
+        request: URLRequest,
+        redirectValidator: @escaping @Sendable (URL, URL) -> Bool
+    ) {
+        baseSession = session
+        self.request = request
+        self.redirectValidator = redirectValidator
+    }
+
+    func run() async throws -> HTTPTransportResponse {
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                guard let originalURL = request.url else {
+                    continuation.resume(throwing: ContentImportError.malformedResponse)
+                    return
+                }
+                let operation = self
+                let delegate = HTTPDataRedirectDelegate(
+                    originalURL: originalURL,
+                    redirectValidator: redirectValidator,
+                    onRejected: { [weak operation] in
+                        operation?.rejectRedirect()
+                    }
+                )
+                let ownedSession = URLSession(
+                    configuration: baseSession.configuration,
+                    delegate: delegate,
+                    delegateQueue: nil
+                )
+                let task = ownedSession.dataTask(with: request) {
+                    [weak self] data, response, error in
+                    self?.complete(data: data, response: response, error: error)
+                }
+                guard
+                    install(
+                        ownedSession: ownedSession,
+                        task: task,
+                        continuation: continuation
+                    )
+                else {
+                    ownedSession.invalidateAndCancel()
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                task.resume()
+            }
+        } onCancel: {
+            cancel()
+        }
+    }
+
+    private func install(
+        ownedSession: URLSession,
+        task: URLSessionDataTask,
+        continuation: CheckedContinuation<HTTPTransportResponse, Error>
+    ) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isCancelled else { return false }
+        self.ownedSession = ownedSession
+        self.task = task
+        self.continuation = continuation
+        return true
+    }
+
+    private func rejectRedirect() {
+        finish(with: .failure(ContentImportError.malformedResponse))
+    }
+
+    private func complete(data: Data?, response: URLResponse?, error: Error?) {
+        if let error {
+            finish(with: .failure(error))
+            return
+        }
+        guard let data, let response = response as? HTTPURLResponse else {
+            finish(with: .failure(ContentImportError.malformedResponse))
+            return
+        }
+        finish(with: .success(HTTPTransportResponse(data: data, response: response)))
+    }
+
+    private func cancel() {
+        lock.lock()
+        isCancelled = true
+        let task = self.task
+        lock.unlock()
+        task?.cancel()
+        finish(with: .failure(CancellationError()))
+    }
+
+    private func finish(with result: Result<HTTPTransportResponse, Error>) {
+        lock.lock()
+        let continuation = self.continuation
+        let ownedSession = self.ownedSession
+        self.continuation = nil
+        self.ownedSession = nil
+        self.task = nil
+        lock.unlock()
+        guard let continuation else { return }
+        ownedSession?.finishTasksAndInvalidate()
+        continuation.resume(with: result)
     }
 }
 

@@ -57,7 +57,7 @@ struct FolderEditorSheet: View {
     typealias SaveCompletion = @MainActor @Sendable (String?) -> Void
 
     let request: FolderEditorRequest
-    let folders: [LibraryFolder]
+    let folderTree: [LibraryFolderNode]
     let onSave: (String, UUID?, @escaping SaveCompletion) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -70,11 +70,11 @@ struct FolderEditorSheet: View {
 
     init(
         request: FolderEditorRequest,
-        folders: [LibraryFolder],
+        folderTree: [LibraryFolderNode],
         onSave: @escaping (String, UUID?, @escaping SaveCompletion) -> Void
     ) {
         self.request = request
-        self.folders = folders
+        self.folderTree = folderTree
         self.onSave = onSave
         _name = State(initialValue: request.initialName)
         _parentID = State(initialValue: request.defaultParentID)
@@ -93,12 +93,16 @@ struct FolderEditorSheet: View {
                 .accessibilityIdentifier("library.folder-editor.name")
 
             if request.createsFolder {
-                Picker("位置", selection: $parentID) {
-                    Text("资料库根目录").tag(nil as UUID?)
-                    ForEach(folderChoices, id: \.id) { folder in
-                        Text(folder.label).tag(Optional(folder.id))
-                    }
-                }
+                Text("位置")
+                    .font(DesignTypography.bodyMedium)
+
+                LibraryFolderTreePicker(
+                    folders: folderTree,
+                    selectedFolderID: parentID,
+                    includesLibraryRoot: true,
+                    onSelect: { parentID = $0 }
+                )
+                .frame(minHeight: 140, maxHeight: 240)
                 .accessibilityIdentifier("library.folder-editor.parent")
             }
 
@@ -125,29 +129,8 @@ struct FolderEditorSheet: View {
             }
         }
         .padding(DesignMetrics.space24)
-        .frame(width: 380)
+        .frame(width: 420)
         .task { isNameFocused = true }
-    }
-
-    private var folderChoices: [(id: UUID, label: String)] {
-        let childrenByParent = Dictionary(grouping: folders, by: \.parentID)
-        var result: [(UUID, String)] = []
-        var stack = (childrenByParent[nil] ?? [])
-            .reversed()
-            .map { (folder: $0, depth: 0) }
-        while let current = stack.popLast() {
-            result.append(
-                (
-                    current.folder.id,
-                    String(repeating: "　", count: current.depth) + current.folder.displayName
-                ))
-            let children = childrenByParent[current.folder.id] ?? []
-            stack.append(
-                contentsOf: children.reversed().map {
-                    (folder: $0, depth: current.depth + 1)
-                })
-        }
-        return result
     }
 
     private func save() {

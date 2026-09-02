@@ -9,39 +9,13 @@ struct AsciiInspector: View {
     @Environment(\.designPalette) private var palette
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.space12) {
-            HStack {
-                Text("参数")
-                    .font(DesignTypography.sectionTitle)
-                    .foregroundStyle(palette.textPrimary)
-
-                Spacer(minLength: 0)
-
-                Button("关闭参数", systemImage: "xmark", action: close)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(.cancelAction)
-                    .frame(width: 24, height: 24)
+        ToolInspectorPanel("参数", closeLabel: "关闭参数", close: close) {
+            VStack(alignment: .leading, spacing: DesignMetrics.space16) {
+                characterControls
+                renderControls
+                animationControls
             }
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: DesignMetrics.space16) {
-                    characterControls
-                    renderControls
-                    animationControls
-                }
-            }
-            .scrollIndicators(.hidden)
         }
-        .padding(DesignMetrics.space16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(palette.surface)
-        .clipShape(.rect(cornerRadius: DesignMetrics.cornerRadius))
-        .overlay {
-            RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius)
-                .stroke(palette.border, lineWidth: 1)
-        }
-        .accessibilityAction(.escape, close)
     }
 
     private var characterControls: some View {

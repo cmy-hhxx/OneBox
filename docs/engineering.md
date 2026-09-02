@@ -8,7 +8,7 @@
 - 模块用小接口隐藏深实现；第二个真实消费者出现前不提取共享模块。
 - 新依赖只通过 Swift Package Manager 引入，并记录需求、维护状态、许可证和删除成本。
 - `StockWatchTool` 与 `PodPinTool` manifest 分别直接依赖 GRDB 与 GRDBSQLite products，SwiftPM 会自然传播 module map；`project.yml` 和 App consumers 不得复制 DerivedData 相对路径 workaround 或禁用 explicit modules。
-- StockWatch Release benchmark 显式启用非默认 `Benchmark` package trait；PodPin 完整 Release tests 显式启用非默认 `Testing` trait。两者只为对应验证编译 internal test hooks，最终 App 与普通 Release build 都不启用这些 traits。
+- StockWatch 与 PodPin Release benchmark 显式启用非默认 `Benchmark` package trait；PodPin 基准也启用 `Testing` trait，以便 SwiftPM 能编译同一 package 中的既有测试目标。两者只为对应验证编译 internal test hooks，最终 App 与普通 Release build 都不启用这些 traits。
 
 ## Swift
 
@@ -30,7 +30,7 @@
 ./scripts/check.sh
 ```
 
-该脚本要求 Apple Silicon，检查 Markdown 链接和 `.swift-format`，生成工程并运行全部测试。ASCII Release 性能与内存基准另运行 `./scripts/benchmark-ascii.sh`；股票看盘 Release 刷新、存储与图表准备基准另运行 `./scripts/benchmark-stock-watch.sh`。
+该脚本要求 Apple Silicon，检查 Markdown 链接和 `.swift-format`，生成工程并运行全部测试。ASCII Release 性能与内存基准另运行 `./scripts/benchmark-ascii.sh`；股票看盘 Release 刷新、存储与图表准备基准另运行 `./scripts/benchmark-stock-watch.sh`；PodPin 离线工作区基准另运行 `./scripts/benchmark-podpin.sh`。
 
 `scripts/test.sh` 分别构建和测试 `OneBoxCore`、`AsciiArtTool`、`StockWatchTool`、`PodPinTool` 四个 Swift package，并保存各自的日志和 JSON coverage；coverage 门要求报告包含 package 自身实际覆盖的源码行。默认模式随后仅在 Xcode `build-for-testing`、`test-without-building` 命令通过 test option 和命令级 build setting 显式启用 coverage，并要求 App 与 App-hosted tests 的 `xccov` 报告都包含实际覆盖行。共享 scheme 和工程的基础 build setting 默认关闭 coverage，普通 Debug/Release App build 不得带 LLVM coverage 插桩。两个 PodPin live 模式把 opt-in flags 和锁定媒体工具路径直接导出给 SwiftPM test 进程，不修改 `.xctestrun`，并保留 package coverage。Xcode 26.6 启动 macOS test host 时会把中间 `PackageFrameworks` 目录置于搜索路径前方，dyld 可能卡在其中的 GRDB wrapper；其并行 test bundle 载入以及 RPAC/Main Thread Checker 注入也可能卡住。脚本会从生成的 `.xctestrun` 中移除该中间目录和两项注入，使 test host 使用 `OneBox.app` 内已签名的 framework。离线工具打包会拒绝带 coverage 插桩或 App entitlement 的 Release 产物，并移除最终 App 中仅指向构建目录的 rpath。Xcode IDE 的正常运行仍保留这些诊断器。
 

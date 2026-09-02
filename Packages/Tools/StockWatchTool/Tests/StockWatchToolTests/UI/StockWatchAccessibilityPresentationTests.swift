@@ -28,6 +28,17 @@ final class StockWatchAccessibilityPresentationTests: XCTestCase {
         XCTAssertEqual(InstrumentRowPresentation.percentText(1.25), "+1.25%")
     }
 
+    func testCompactRowKeepsEveryCoreMarketFieldWithoutTheChart() {
+        let compactFields = StockWatchRowLayout.compact.visibleFields
+
+        XCTAssertTrue(compactFields.contains(.identity))
+        XCTAssertTrue(compactFields.contains(.code))
+        XCTAssertTrue(compactFields.contains(.status))
+        XCTAssertTrue(compactFields.contains(.price))
+        XCTAssertTrue(compactFields.contains(.changeDirection))
+        XCTAssertFalse(compactFields.contains(.intradayChart))
+    }
+
     func testRowAccessibilitySummaryIncludesNamespaceDisplayName() {
         let instrument = Instrument.initialWatchlist[0]
 

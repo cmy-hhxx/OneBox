@@ -218,14 +218,6 @@ struct StockWatchStorage: Sendable {
     ) async throws -> Bool {
         let fileManager = FileManager.default
         try cancellationToken.checkCancellation()
-        try Self.validateLegacySourceCanBeOpened(at: legacyURL, fileManager: fileManager)
-        try cancellationToken.checkCancellation()
-        try await Self.validateDatabase(
-            at: legacyURL,
-            cancellationToken: cancellationToken
-        )
-        try cancellationToken.checkCancellation()
-
         let temporaryURL = directory.appendingPathComponent(
             ".marketsprite.sqlite.importing-\(UUID().uuidString)",
             isDirectory: false

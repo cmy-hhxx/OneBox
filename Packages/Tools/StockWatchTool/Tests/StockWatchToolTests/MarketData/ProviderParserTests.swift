@@ -15,6 +15,24 @@ final class ProviderParserTests: XCTestCase {
         XCTAssertEqual(bar.low, 1322, accuracy: 0.001)
     }
 
+    func testEastMoneyParserRejectsMalformedTimestampAndInvalidOHLC() {
+        XCTAssertNil(
+            EastMoneyParser.minuteBar(
+                from: "2026/07/30 09:31,1323.00,1329.50,1330.00,1322.00"
+            )
+        )
+        XCTAssertNil(
+            EastMoneyParser.minuteBar(
+                from: "2026-07-30 09:31 trailing,1323.00,1329.50,1330.00,1322.00"
+            )
+        )
+        XCTAssertNil(
+            EastMoneyParser.minuteBar(
+                from: "2026-07-30 09:31,307.855,308.260,308.250,307.800"
+            )
+        )
+    }
+
     func testEastMoneyUSMinutesUseProviderClockAndStayInOneMarketSession() throws {
         let open = try XCTUnwrap(
             EastMoneyParser.minuteBar(
@@ -123,6 +141,23 @@ final class ProviderParserTests: XCTestCase {
             ),
             "106.BRK.B"
         )
+        for marketNumber in ["105", "106", "107"] {
+            let item = EastMoneySearchItem(
+                code: "BRK.B",
+                name: "伯克希尔",
+                classification: "UsStock",
+                securityType: "20",
+                marketNumber: marketNumber,
+                quoteIdentifier: "\(marketNumber).BRK.B"
+            )
+            XCTAssertEqual(
+                EastMoneyParser.validatedQuoteIdentifier(
+                    for: item,
+                    instrument: dottedInstrument
+                ),
+                "\(marketNumber).BRK.B"
+            )
+        }
 
         let apple = Instrument.initialWatchlist[2]
         XCTAssertNil(

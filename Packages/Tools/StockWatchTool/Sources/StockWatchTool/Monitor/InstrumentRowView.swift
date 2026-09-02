@@ -60,25 +60,48 @@ enum InstrumentRowPresentation {
     }
 }
 
+enum StockWatchRowField: Hashable {
+    case identity
+    case code
+    case status
+    case price
+    case changeDirection
+    case intradayChart
+}
+
+/// `ViewThatFits` selects between these stable row shapes without measuring
+/// the workspace or introducing a second scrolling axis.
+enum StockWatchRowLayout: Equatable {
+    case wide
+    case compact
+
+    static let wideMinimumWidth: CGFloat = 420
+
+    var visibleFields: Set<StockWatchRowField> {
+        switch self {
+        case .wide:
+            [.identity, .code, .status, .price, .changeDirection, .intradayChart]
+        case .compact:
+            [.identity, .code, .status, .price, .changeDirection]
+        }
+    }
+}
+
 struct InstrumentRowView: View {
     let instrument: Instrument
     let quote: QuoteSnapshot?
+    let chart: PreparedIntradayChart?
     let status: MonitorStatus
     let statusMessage: String?
 
     @Environment(\.designPalette) private var palette
 
     var body: some View {
-        HStack(spacing: DesignMetrics.space12) {
-            identity
-                .frame(width: 132, alignment: .leading)
+        ViewThatFits(in: .horizontal) {
+            wideContent
+                .frame(minWidth: StockWatchRowLayout.wideMinimumWidth)
 
-            chart
-                .frame(minWidth: 0, maxWidth: .infinity)
-
-            price
-                .frame(width: 108, alignment: .trailing)
-                .accessibilityHidden(true)
+            compactContent
         }
         .padding(.horizontal, DesignMetrics.space12)
         .frame(
@@ -88,6 +111,30 @@ struct InstrumentRowView: View {
         )
         .contentShape(.rect)
         .accessibilityElement(children: .contain)
+    }
+
+    private var wideContent: some View {
+        HStack(spacing: DesignMetrics.space12) {
+            identity
+                .frame(width: 132, alignment: .leading)
+
+            intradayChart
+                .frame(minWidth: 0, maxWidth: .infinity)
+
+            price
+                .frame(width: 108, alignment: .trailing)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var compactContent: some View {
+        HStack(spacing: DesignMetrics.space12) {
+            identity
+
+            price
+                .frame(width: 96, alignment: .trailing)
+                .accessibilityHidden(true)
+        }
     }
 
     private var identity: some View {
@@ -117,18 +164,10 @@ struct InstrumentRowView: View {
     }
 
     @ViewBuilder
-    private var chart: some View {
-        if let quote, quote.minuteBars.count > 1 {
-            IntradayChartView(
-                points: quote.minuteBars,
-                market: instrument.market,
-                dayOpen: quote.dayOpen,
-                previousClose: quote.previousClose,
-                colorRole: changeRole(for: quote),
-                showReviewMarkers: instrument.market == .aShare
-                    && TradingCalendar.shouldShowAShareReviewMarkers(for: quote)
-            )
-            .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 48)
+    private var intradayChart: some View {
+        if let chart, chart.points.count > 1 {
+            IntradayChartView(chart: chart)
+                .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 48)
         } else {
             HStack(spacing: DesignMetrics.space8) {
                 if status == .loading {

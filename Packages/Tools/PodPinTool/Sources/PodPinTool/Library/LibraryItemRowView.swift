@@ -10,9 +10,7 @@ struct LibraryItemRowView: View {
     let isPlaying: Bool
     let downloadSession: DownloadSession
     let playbackTimeline: PlaybackTimelineSession
-    let folders: [LibraryFolderNode]
     let onTogglePlayback: () -> Void
-    let onMove: (UUID) -> Void
     let onItemAction: (LibraryItemAction) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -138,11 +136,7 @@ struct LibraryItemRowView: View {
             Button("下一项播放") { onItemAction(.enqueueNext) }
             Button("添加到队尾") { onItemAction(.enqueueLast) }
             Divider()
-            Menu("归档到") {
-                FolderDestinationMenu(folders: folders, excluding: [item.folderID]) {
-                    onMove($0.id)
-                }
-            }
+            Button("移动到…") { onItemAction(.move) }
             Divider()
             Button("删除", role: .destructive) { onItemAction(.delete) }
         } label: {
