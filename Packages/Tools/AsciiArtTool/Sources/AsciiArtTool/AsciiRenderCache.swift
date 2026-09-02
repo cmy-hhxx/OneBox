@@ -3,10 +3,15 @@ import Metal
 @MainActor
 final class AsciiRenderCache {
     private let deviceProvider: any AsciiMetalDeviceProviding
+    private let asyncWorkOwner: AsciiAsyncWorkOwner
     private var pipeline: AsciiMetalPipeline?
 
-    init(deviceProvider: any AsciiMetalDeviceProviding) {
+    init(
+        deviceProvider: any AsciiMetalDeviceProviding,
+        asyncWorkOwner: AsciiAsyncWorkOwner = AsciiAsyncWorkOwner()
+    ) {
         self.deviceProvider = deviceProvider
+        self.asyncWorkOwner = asyncWorkOwner
     }
 
     func preparedPipeline() async throws -> AsciiMetalPipeline {
@@ -16,12 +21,13 @@ final class AsciiRenderCache {
             throw AsciiToolError.metalUnavailable
         }
         let result = try await AsciiAsyncDeadline.run(
-            for: AsciiAsyncDeadline.pipelinePreparation
+            for: AsciiAsyncDeadline.pipelinePreparation,
+            owner: asyncWorkOwner
         ) {
             let library = try await device.makeLibrary(
                 source: AsciiShaderSource.source, options: nil)
             try Task.checkCancellation()
-            return try await AsciiMetalPipeline(device: device, library: library)
+            return try AsciiMetalPipeline(device: device, library: library)
         }
         try Task.checkCancellation()
         pipeline = result

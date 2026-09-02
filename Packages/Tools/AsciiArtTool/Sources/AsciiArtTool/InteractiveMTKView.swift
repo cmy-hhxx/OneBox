@@ -5,6 +5,7 @@ final class InteractiveMTKView: MTKView {
     var onPan: ((CGSize, CGSize) -> Void)?
     var onZoom: ((Double, CGPoint, CGSize) -> Void)?
     var onReset: (() -> Void)?
+    var onWindowVisibilityChanged: ((Bool) -> Void)?
 
     private var isInfiniteDragActive = false
 
@@ -45,12 +46,33 @@ final class InteractiveMTKView: MTKView {
             name: NSApplication.didResignActiveNotification,
             object: nil
         )
+        for name in [
+            NSWindow.didMiniaturizeNotification,
+            NSWindow.didDeminiaturizeNotification,
+            NSWindow.didChangeOcclusionStateNotification,
+        ] {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(windowVisibilityDidChange),
+                name: name,
+                object: window
+            )
+        }
+        publishWindowVisibility()
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         NotificationCenter.default.removeObserver(self)
         cancelInteraction()
+        onWindowVisibilityChanged?(false)
         super.viewWillMove(toWindow: newWindow)
+    }
+
+    nonisolated static func shouldRender(
+        isMiniaturized: Bool,
+        occlusionState: NSWindow.OcclusionState
+    ) -> Bool {
+        !isMiniaturized && occlusionState.contains(.visible)
     }
 
     nonisolated static func canvasDragDelta(deltaX: CGFloat, deltaY: CGFloat) -> CGSize {
@@ -74,6 +96,23 @@ final class InteractiveMTKView: MTKView {
 
     @objc private func cancelInteractionForNotification(_ notification: Notification) {
         cancelInteraction()
+    }
+
+    @objc private func windowVisibilityDidChange(_ notification: Notification) {
+        publishWindowVisibility()
+    }
+
+    private func publishWindowVisibility() {
+        guard let window else {
+            onWindowVisibilityChanged?(false)
+            return
+        }
+        onWindowVisibilityChanged?(
+            Self.shouldRender(
+                isMiniaturized: window.isMiniaturized,
+                occlusionState: window.occlusionState
+            )
+        )
     }
 
     override func scrollWheel(with event: NSEvent) {

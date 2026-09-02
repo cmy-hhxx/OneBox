@@ -314,10 +314,12 @@ final class PodPinStoreTests: XCTestCase {
             localMediaRelativePath: "\(inserted.id.uuidString)/audio.m4a",
             duration: 60
         )
+        let importer = CountingStreamImporter()
         let store = PodPinStore(
             preferences: AppPreferences(defaults: defaults),
             databaseFactory: { database },
-            mediaStoreFactory: { try PodPinMediaStore(rootURL: mediaRoot) }
+            mediaStoreFactory: { try PodPinMediaStore(rootURL: mediaRoot) },
+            importer: importer
         )
         await store.start()
 
@@ -330,6 +332,9 @@ final class PodPinStoreTests: XCTestCase {
             store.items.first(where: { $0.id == inserted.id })?.downloadState,
             .failed
         )
+        let resolutionCount = await importer.resolutionCount()
+        XCTAssertEqual(resolutionCount, 1)
+        XCTAssertEqual(store.playbackPresentation.snapshot.item?.id, inserted.id)
     }
 
     @MainActor

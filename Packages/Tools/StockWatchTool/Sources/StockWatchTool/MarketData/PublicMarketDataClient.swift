@@ -5,9 +5,16 @@ actor PublicMarketDataClient: MarketDataClient {
     private let redirectDelegate = RedirectRejectingDelegate()
     private let decoder = JSONDecoder()
     private let searchToken = "D43BF722C8E33DA55D5C6812C6C46"
+    private let identifierStore: EastMoneyIdentifierStore
     private var eastMoneyIdentifiers: [InstrumentID: String] = [:]
 
-    init(session: URLSession? = nil) {
+    init(
+        session: URLSession? = nil,
+        identifierStore: EastMoneyIdentifierStore? = nil
+    ) {
+        self.identifierStore =
+            identifierStore
+            ?? EastMoneyIdentifierStore(defaults: session == nil ? .standard : nil)
         if let session {
             self.session = session
         } else {
@@ -58,6 +65,7 @@ actor PublicMarketDataClient: MarketDataClient {
             guard seen.insert(instrument.id).inserted else { continue }
             if instrument.namespace == .unitedStates {
                 eastMoneyIdentifiers[instrument.id] = quoteIdentifier
+                identifierStore.setIdentifier(quoteIdentifier, for: instrument.id)
             }
             instruments.append(instrument)
         }
@@ -139,7 +147,32 @@ actor PublicMarketDataClient: MarketDataClient {
     private func fetchEastMoneyQuote(
         for instrument: Instrument
     ) async throws -> QuoteSnapshot {
-        let quoteIdentifier = try await eastMoneyQuoteIdentifier(for: instrument)
+        let resolution = try await eastMoneyQuoteIdentifier(for: instrument)
+        do {
+            return try await fetchEastMoneyQuote(
+                for: instrument,
+                quoteIdentifier: resolution.value
+            )
+        } catch {
+            try Task.checkCancellation()
+            guard resolution.canRefresh else { throw error }
+            eastMoneyIdentifiers.removeValue(forKey: instrument.id)
+            identifierStore.removeIdentifier(for: instrument.id)
+            _ = try await searchInstruments(matching: instrument.symbol)
+            guard let refreshedIdentifier = eastMoneyIdentifiers[instrument.id] else {
+                throw error
+            }
+            return try await fetchEastMoneyQuote(
+                for: instrument,
+                quoteIdentifier: refreshedIdentifier
+            )
+        }
+    }
+
+    private func fetchEastMoneyQuote(
+        for instrument: Instrument,
+        quoteIdentifier: String
+    ) async throws -> QuoteSnapshot {
         var components = URLComponents()
         components.scheme = "https"
         components.host = "push2delay.eastmoney.com"
@@ -185,19 +218,42 @@ actor PublicMarketDataClient: MarketDataClient {
         )
     }
 
-    private func eastMoneyQuoteIdentifier(for instrument: Instrument) async throws -> String {
+    private func eastMoneyQuoteIdentifier(
+        for instrument: Instrument
+    ) async throws -> EastMoneyIdentifierResolution {
         if let deterministic = EastMoneyParser.deterministicQuoteIdentifier(for: instrument) {
-            return deterministic
+            return EastMoneyIdentifierResolution(value: deterministic, canRefresh: false)
         }
         if let cached = eastMoneyIdentifiers[instrument.id] {
-            return cached
+            return EastMoneyIdentifierResolution(value: cached, canRefresh: true)
+        }
+        if let persisted = identifierStore.identifier(for: instrument.id),
+            Self.isValidPersistedIdentifier(persisted, for: instrument)
+        {
+            eastMoneyIdentifiers[instrument.id] = persisted
+            return EastMoneyIdentifierResolution(value: persisted, canRefresh: true)
         }
 
         _ = try await searchInstruments(matching: instrument.symbol)
         guard let resolved = eastMoneyIdentifiers[instrument.id] else {
             throw MarketDataError.invalidResponse
         }
-        return resolved
+        return EastMoneyIdentifierResolution(value: resolved, canRefresh: true)
+    }
+
+    private static func isValidPersistedIdentifier(
+        _ identifier: String,
+        for instrument: Instrument
+    ) -> Bool {
+        let parts = identifier.split(separator: ".", omittingEmptySubsequences: false)
+        guard instrument.namespace == .unitedStates,
+            parts.count == 2,
+            !parts[0].isEmpty,
+            parts[0].allSatisfy(\.isNumber)
+        else {
+            return false
+        }
+        return parts[1] == Substring(instrument.symbol)
     }
 
     private func request(_ url: URL) async throws -> Data {
@@ -217,6 +273,11 @@ actor PublicMarketDataClient: MarketDataClient {
         else { throw MarketDataError.invalidResponse }
         return data
     }
+}
+
+private struct EastMoneyIdentifierResolution: Sendable {
+    let value: String
+    let canRefresh: Bool
 }
 
 private final class RedirectRejectingDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable

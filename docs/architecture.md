@@ -44,7 +44,7 @@ PodPin 通过 `PodPinModule.makeRegistration(platform:debugFixtureAudioURL:exter
 
 该生命周期没有宿主启动后台激活、菜单栏 worker 或常驻调度。窗口只被其他窗口遮挡或失去焦点不会让 SwiftUI 内容离屏；当前生命周期不把这种状态当作停机信号。
 
-PodPin 首次被选择时才创建 session 内容并打开旧命名空间数据库。切换工具后，用户已明确开始的播放和下载仍由 session 持有；应用退出 hook 在同一 15 秒期限内取消并等待导入、下载和解析，flush 播放与资料库状态，停止媒体命令并关闭数据库。shutdown 幂等且支持超时取消。
+PodPin 首次被选择时才创建 session 内容并打开旧命名空间数据库。切换工具后，用户已明确开始的播放和下载仍由 session 持有；应用退出 hook 在同一 15 秒期限内请求取消并等待导入、下载和解析，flush 播放与资料库状态，停止媒体命令并关闭数据库；无法合作取消的 framework 工作不会无限阻塞应用退出。shutdown 幂等且支持有界取消。
 
 ## 数据与网络
 
@@ -60,24 +60,24 @@ PodPin 首次被选择时才创建 session 内容并打开旧命名空间数据�
 ~/Library/Application Support/MarketSprite/marketsprite.sqlite
 ```
 
-上面的独立应用旧库不会被写入、移动、归档或删除；成功导入后只写 OneBox 命名空间。schema、完整性和并发策略见 [ADR-0009](decisions/0009-use-onebox-grdb-database-and-one-time-import.md)，本地数据内容与删除方法见[股票看盘隐私说明](stock-watch-privacy.md)。刷新间隔和牛熊声音开关存入 OneBox 的 `UserDefaults` 键空间。
+上面的独立应用旧库不会被写入、移动、归档或删除；成功导入后只写 OneBox 命名空间。schema、完整性和并发策略见 [ADR-0009](decisions/0009-use-onebox-grdb-database-and-one-time-import.md)，本地数据内容与删除方法见[股票看盘隐私说明](stock-watch-privacy.md)。刷新间隔、牛熊声音开关和已解析的公开美股 provider 标识存入 OneBox 的 `UserDefaults` 键空间；provider 标识的校验与失效恢复见 [ADR-0011](decisions/0011-cache-public-market-provider-identifiers-in-preferences.md)。
 
 工具只通过 HTTPS 访问三个公开端点：
 
 | 端点 | 用途 | 发送内容 |
 | --- | --- | --- |
-| `searchapi.eastmoney.com` | A股、港股和美股搜索；必要时解析美股行情标识 | 用户输入的名称或代码，以及固定的类型、结果数和公开 provider token |
+| `searchapi.eastmoney.com` | A股、港股和美股搜索；必要时解析并本地缓存美股行情标识 | 用户输入的名称或代码，以及固定的类型、结果数和公开 provider token |
 | `web.ifzq.gtimg.cn` | 首选分时行情 | 单个标的的 provider code |
 | `push2delay.eastmoney.com` | 腾讯失败后的东方财富分时 fallback | 单个标的的 `secid` 和固定字段、单日参数 |
 
 provider 响应先解析和校验，再进入内存和本地缓存。请求不包含 OneBox 账户、交易指令或整份自选列表；工具离屏后不发起搜索或刷新。公开端点没有 OneBox 可承诺的 SLA，数据可能延迟、中断、缺失或错误。
 
-PodPin 继续使用 `~/Library/Application Support/PodPin/` 和原 PodPin 偏好 suite，不复制已有资料库。只有用户发起的公开链接导入、在线播放、下载或重试才访问声明的内容源；外部媒体工具策略和锁定信息见 [`Tools/README.md`](../Tools/README.md)。
+PodPin 继续使用 `~/Library/Application Support/PodPin/` 和原 PodPin 偏好 suite，不复制已有资料库。沿用的既有偏好键是 `podpin.nowPlayingContentOpacity`、`podpin.playbackRate`、`podpin.playbackVolume` 和 `podpin.lastLibraryCollection`。只有用户发起的公开链接导入、在线播放、下载或重试才访问声明的内容源；外部媒体工具策略和锁定信息见 [`Tools/README.md`](../Tools/README.md)。
 
 ## 当前运行状态
 
 - 宿主启动时选择第一个 registration，因此 ASCII 工坊默认打开；其他工具在被选择前不构造内容。
-- ASCII 工坊在注册时创建内存会话和惰性渲染缓存，不请求设备或执行 I/O。隐藏、窗口失活或暂停时停止持续绘制，关闭视图时取消导入和导出。
+- ASCII 工坊在注册时创建内存会话和惰性渲染缓存，不请求设备或执行 I/O。工具隐藏、场景失活、窗口最小化、窗口完全遮挡或用户暂停时停止持续绘制，关闭视图时取消导入和导出。
 - 股票看盘已接入既有 registration；只在可见期间打开本地库和公开行情源，不请求系统通知权限，也不执行后台监控。
 - PodPin 首次被选择时才开库并安装系统媒体命令；离屏后已开始的播放和下载可以继续，应用退出会等待其 flush 和清理。
 - 股票看盘只用 Unified Logging signpost 记录固定性能区间；PodPin 使用脱敏事件日志。两者都不记录用户内容、完整查询或绝对用户路径。

@@ -63,11 +63,6 @@ final class WatchlistSearchModel: ObservableObject {
     }
 
     func cancel() {
-        if !query.isEmpty {
-            query = ""
-            return
-        }
-
         invalidateSearch()
     }
 

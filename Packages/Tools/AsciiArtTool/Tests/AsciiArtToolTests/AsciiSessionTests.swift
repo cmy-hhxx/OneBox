@@ -22,6 +22,21 @@ struct AsciiSessionTests {
     }
 
     @Test
+    func `animation pauses while the window is minimized or occluded`() {
+        let session = AsciiSession()
+        session.setVisible(true)
+
+        session.setWindowVisible(false)
+        #expect(!session.isAnimationActive)
+
+        session.setWindowVisible(true)
+        #expect(session.isAnimationActive)
+
+        session.setSceneActive(false)
+        #expect(!session.isAnimationActive)
+    }
+
+    @Test
     func `reduce motion defaults static but manual play explicitly starts animation`() {
         let session = AsciiSession()
         session.setVisible(true)
@@ -54,6 +69,17 @@ struct AsciiSessionTests {
 
         session.setMetalReady(true)
         #expect(session.statusError == .decodeFailed)
+    }
+
+    @Test
+    func `metal failure exposes an in-session retry generation`() {
+        let session = AsciiSession()
+
+        session.setMetalReady(false)
+        session.retryMetalPreparation()
+
+        #expect(session.statusError == nil)
+        #expect(session.metalRetryRevision == 1)
     }
 
     @Test

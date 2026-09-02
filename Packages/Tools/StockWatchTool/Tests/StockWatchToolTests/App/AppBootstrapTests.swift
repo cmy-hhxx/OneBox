@@ -34,6 +34,7 @@ final class StockWatchBootstrapTests: XCTestCase {
         XCTAssertNil(bootstrap.preferences)
         XCTAssertEqual(bootstrap.failure?.databasePath, databasePath)
         XCTAssertNotNil(bootstrap.failure?.message)
+        XCTAssertFalse(bootstrap.failure?.canClearQuoteCache == true)
 
         await bootstrap.start(retryingShutdownFailure: true)
 
@@ -69,9 +70,41 @@ final class StockWatchBootstrapTests: XCTestCase {
         )
         XCTAssertFalse(bootstrap.failure?.message.contains("PRIVATE") == true)
         XCTAssertFalse(bootstrap.failure?.message.contains("/Users/") == true)
+        XCTAssertFalse(bootstrap.failure?.canClearQuoteCache == true)
     }
 
-    func testLocalRestoreFailureDoesNotRefreshOrPublishStore() async throws {
+    func testQuoteCacheRecoveryIsOwnedByVisibleLifecycleAndCancelledOnExit() async throws {
+        let clearProbe = QuoteCacheClearProbe()
+        let bootstrap = StockWatchBootstrap(
+            preferencesFactory: { self.makePreferences() },
+            client: FailingMarketDataClient(),
+            databasePath: "/tmp/quote-cache-recovery.sqlite",
+            databaseFactory: {
+                throw StockWatchStartupError.quoteCacheUnavailable
+            },
+            quoteCacheClear: {
+                try await clearProbe.clear()
+            }
+        )
+        let runTask = Task { @MainActor in
+            await bootstrap.run()
+        }
+        try await waitForFailure(in: bootstrap)
+        XCTAssertTrue(bootstrap.failure?.canClearQuoteCache == true)
+
+        bootstrap.requestQuoteCacheClear()
+        try await clearProbe.waitUntilStarted()
+        XCTAssertTrue(bootstrap.isClearingQuoteCache)
+
+        runTask.cancel()
+        await runTask.value
+
+        let wasCancelled = await clearProbe.wasCancelled
+        XCTAssertTrue(wasCancelled)
+        XCTAssertFalse(bootstrap.isClearingQuoteCache)
+    }
+
+    func testNonContiguousStoredPositionsAreNormalizedDuringOpen() async throws {
         let temporaryDirectory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
         let databasePath =
@@ -79,20 +112,94 @@ final class StockWatchBootstrapTests: XCTestCase {
             .appendingPathComponent("invalid-restore.sqlite")
             .path
         try await prepareInvalidRestoreDatabase(atPath: databasePath)
-        let client = CountingMarketDataClient()
         let bootstrap = StockWatchBootstrap(
             preferencesFactory: { self.makePreferences() },
-            client: client,
+            client: FailingMarketDataClient(),
             databasePath: databasePath,
             databaseFactory: { try MarketDatabase.open(atPath: databasePath) }
         )
 
         await bootstrap.start()
 
-        let fetchCount = await client.fetchCount
-        XCTAssertNil(bootstrap.store)
-        XCTAssertNotNil(bootstrap.failure)
-        XCTAssertEqual(fetchCount, 0)
+        XCTAssertNotNil(bootstrap.store)
+        XCTAssertNil(bootstrap.failure)
+        await bootstrap.shutdown()
+        let positions = try SQLiteTestSupport.execute(
+            "SELECT group_concat(position, ',') FROM watchlist ORDER BY position;",
+            atPath: databasePath
+        )
+        XCTAssertEqual(positions.trimmingCharacters(in: .whitespacesAndNewlines), "0")
+    }
+
+    func testFailedFirstCanonicalOpenRemovesPartialDatabaseFiles() async throws {
+        let applicationSupport = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: applicationSupport) }
+        let storage = StockWatchStorage(
+            applicationSupportDirectory: applicationSupport,
+            databaseOpenerForTesting: { databaseURL in
+                try Data("partial sqlite".utf8).write(to: databaseURL)
+                throw TestError.databaseUnavailable
+            }
+        )
+
+        do {
+            _ = try await storage.open()
+            XCTFail("Expected the injected canonical open to fail")
+        } catch TestError.databaseUnavailable {
+            // Expected.
+        }
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: storage.databasePath))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: storage.databasePath + "-wal"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: storage.databasePath + "-shm"))
+    }
+
+    func testQuoteCacheRecoveryPreservesWatchlistAndAlerts() async throws {
+        let applicationSupport = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: applicationSupport) }
+        let storage = StockWatchStorage(applicationSupportDirectory: applicationSupport)
+        let database = try await storage.open()
+        let instrument = Instrument.initialWatchlist[0]
+        let settings = AlertSettingsSnapshot(
+            configuration: AlertConfiguration(
+                isEnabled: false,
+                basis: .percentage,
+                risingThreshold: 4,
+                fallingThreshold: 5
+            ),
+            priceTargets: [:]
+        )
+        try await database.replaceWatchlist(with: [instrument])
+        try await database.saveAlertSettings(settings)
+        try await database.saveQuote(
+            QuoteSnapshot(
+                instrumentID: instrument.id,
+                minuteBars: [],
+                dayOpen: 1_500,
+                previousClose: 1_490,
+                lastPrice: 1_510,
+                marketTime: try XCTUnwrap(
+                    ISO8601DateFormatter().date(from: "2026-07-30T07:00:00Z")
+                ),
+                receivedAt: try XCTUnwrap(
+                    ISO8601DateFormatter().date(from: "2026-07-30T07:00:01Z")
+                ),
+                source: .tencent
+            ),
+            for: instrument
+        )
+        try await database.close()
+
+        try await storage.clearQuoteCache()
+
+        let reopened = try await storage.open()
+        let restoredWatchlist = try await reopened.loadWatchlist()
+        let restoredSettings = try await reopened.loadAlertSettings()
+        let restoredQuotes = try await reopened.loadLatestQuotes(for: [instrument])
+        XCTAssertEqual(restoredWatchlist, [instrument])
+        XCTAssertEqual(restoredSettings, settings)
+        XCTAssertTrue(restoredQuotes.isEmpty)
+        try await reopened.close()
     }
 
     func testCancellingViewLifetimeFlushesAndClosesStore() async throws {
@@ -368,10 +475,15 @@ final class StockWatchBootstrapTests: XCTestCase {
             withIntermediateDirectories: true
         )
         let legacyURL = legacyDirectory.appendingPathComponent("marketsprite.sqlite")
-        let originalWatchlist = [Instrument.initialWatchlist[1]]
+        let originalWatchlist = Array(Instrument.initialWatchlist.prefix(2))
         let legacyDatabase = try MarketDatabase.open(atPath: legacyURL.path)
         try await legacyDatabase.replaceWatchlist(with: originalWatchlist)
         try await legacyDatabase.close()
+        try SQLiteTestSupport.execute(
+            "UPDATE watchlist SET position = 3 WHERE instrument_id = "
+                + "'\(originalWatchlist[1].id.rawValue)';",
+            atPath: legacyURL.path
+        )
         let legacyBytesBeforeImport = try Data(contentsOf: legacyURL)
         let storage = StockWatchStorage(applicationSupportDirectory: applicationSupport)
 
@@ -760,9 +872,34 @@ private enum TestError: Error {
     case closeDidNotSuspend
     case databaseUnavailable
     case retryOpenDidNotSuspend
+    case quoteCacheClearDidNotStart
     case snapshotCopyDidNotComplete
     case storeDidNotStart
     case startupDidNotFail
+}
+
+private actor QuoteCacheClearProbe {
+    private var started = false
+    private(set) var wasCancelled = false
+
+    func clear() async throws {
+        started = true
+        do {
+            try await Task.sleep(for: .seconds(3_600))
+        } catch is CancellationError {
+            wasCancelled = true
+            throw CancellationError()
+        }
+    }
+
+    func waitUntilStarted() async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while !started, clock.now < deadline {
+            await Task.yield()
+        }
+        guard started else { throw TestError.quoteCacheClearDidNotStart }
+    }
 }
 
 private actor ImportStageGate {

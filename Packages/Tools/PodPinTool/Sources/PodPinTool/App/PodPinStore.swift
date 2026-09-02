@@ -1056,7 +1056,7 @@ final class PodPinStore: ObservableObject {
         do {
             try Task.checkCancellation()
             let database = try requireDatabase()
-            let item = try await database.item(id: requestedItem.id) ?? requestedItem
+            var item = try await database.item(id: requestedItem.id) ?? requestedItem
             guard playbackRequestGeneration == requestGeneration else { return }
             presentPreparingPlayback(item)
 
@@ -1065,24 +1065,32 @@ final class PodPinStore: ObservableObject {
             let mimeType: String?
 
             if item.storageKind == .offline {
-                guard item.downloadState == .available,
+                if item.downloadState == .available,
                     let relativePath = item.localMediaRelativePath,
                     let mediaStore,
                     await mediaStore.containsFile(at: relativePath)
-                else {
+                {
+                    playbackURL = try mediaStore.absoluteURL(for: relativePath)
+                    headers = [:]
+                    mimeType = nil
+                } else {
                     if item.downloadState == .available {
-                        let failed = try await database.updateDownloadState(
+                        item = try await database.updateDownloadState(
                             for: item.id,
                             state: .failed
                         )
                         guard playbackRequestGeneration == requestGeneration else { return }
-                        applyItemChange(failed)
+                        applyItemChange(item)
                     }
-                    throw ContentImportError.mediaUnavailable("本地音频文件已丢失，无法播放。")
+                    activityMessage = "本地音频不可用，正在准备在线播放…"
+                    let stream = try await resolveOnlineStream(for: item, attempt: attempt)
+                    try Task.checkCancellation()
+                    guard playbackRequestGeneration == requestGeneration else { return }
+                    activityMessage = nil
+                    playbackURL = stream.url
+                    headers = stream.headers
+                    mimeType = stream.mimeType
                 }
-                playbackURL = try mediaStore.absoluteURL(for: relativePath)
-                headers = [:]
-                mimeType = nil
             } else {
                 activityMessage = "正在准备播放…"
                 let stream = try await resolveOnlineStream(for: item, attempt: attempt)

@@ -359,7 +359,7 @@ final class MarketDatabaseTests: XCTestCase {
         let reopened = try MarketDatabase.open(atPath: path)
 
         do {
-            _ = try await reopened.loadLatestQuotes(for: [instrument])
+            try await reopened.validateLatestQuotes(for: [instrument])
             XCTFail("Expected stored session date mismatch to be rejected")
         } catch MarketDatabaseError.quoteSessionDateMismatch(
             let instrumentID,
@@ -385,7 +385,7 @@ final class MarketDatabaseTests: XCTestCase {
         let reopened = try MarketDatabase.open(atPath: path)
 
         do {
-            _ = try await reopened.loadLatestQuotes(for: [instrument])
+            try await reopened.validateLatestQuotes(for: [instrument])
             XCTFail("Expected non-finite stored quote to be rejected")
         } catch MarketDatabaseError.invalidQuote {
             // Expected.
@@ -405,7 +405,7 @@ final class MarketDatabaseTests: XCTestCase {
         let reopened = try MarketDatabase.open(atPath: path)
 
         do {
-            _ = try await reopened.loadLatestQuotes(for: [instrument])
+            try await reopened.validateLatestQuotes(for: [instrument])
             XCTFail("Expected non-finite stored minute values to be rejected")
         } catch MarketDatabaseError.invalidQuote {
             // Expected.
@@ -425,11 +425,52 @@ final class MarketDatabaseTests: XCTestCase {
         let reopened = try MarketDatabase.open(atPath: path)
 
         do {
-            _ = try await reopened.loadLatestQuotes(for: [instrument])
+            try await reopened.validateLatestQuotes(for: [instrument])
             XCTFail("Expected minute from another market session to be rejected")
         } catch MarketDatabaseError.invalidQuote {
             // Expected.
         }
+        try await reopened.close()
+    }
+
+    func testLoadingQuotesOmitsOnlyTheInvalidCacheRow() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "StockWatchMixedCache-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent(MarketDatabase.defaultFileName).path
+        let invalid = Instrument.initialWatchlist[0]
+        let valid = Instrument(symbol: "600000", name: "浦发银行", namespace: .shanghai)
+        let database = try MarketDatabase.open(atPath: path)
+        try await database.replaceWatchlist(with: [invalid, valid])
+        let invalidQuote = quote(
+            for: invalid,
+            prices: [1_500, 1_501],
+            at: "2026-07-30T07:00:00Z",
+            source: .tencent
+        )
+        let validQuote = quote(
+            for: valid,
+            prices: [10, 10.2],
+            at: "2026-07-30T07:00:00Z",
+            source: .eastMoney
+        )
+        try await database.saveQuote(invalidQuote, for: invalid)
+        try await database.saveQuote(validQuote, for: valid)
+        try await database.close()
+        try SQLiteTestSupport.execute(
+            "UPDATE quote_cache SET session_date = '2026-07-31' "
+                + "WHERE instrument_id = '\(invalid.id.rawValue)';",
+            atPath: path
+        )
+
+        let reopened = try MarketDatabase.open(atPath: path)
+        let loaded = try await reopened.loadLatestQuotes(for: [invalid, valid])
+
+        XCTAssertNil(loaded[invalid.id])
+        XCTAssertEqual(loaded[valid.id], validQuote)
         try await reopened.close()
     }
 

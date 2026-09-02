@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-08-28
 - Amended by: [ADR-0010](0010-require-package-per-tool-isolation.md)
+- Amended by: [ADR-0011](0011-cache-public-market-provider-identifiers-in-preferences.md)
 
 ## Context
 

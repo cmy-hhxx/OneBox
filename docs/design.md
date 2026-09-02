@@ -50,6 +50,7 @@ OneBox 使用紧凑的原生 macOS 界面。生产外观固定为浅色；宿主
 | 角色 | 规格 |
 | --- | --- |
 | Sidebar title | 20pt / Semibold |
+| Metric | 20pt / Semibold |
 | Section title | 14pt / Semibold |
 | Body / Control | 13pt / Regular 或 Medium |
 | Metadata | 12pt / Regular |

@@ -114,7 +114,7 @@ final class WatchlistSearchModelTests: XCTestCase {
 
         model.cancel()
 
-        XCTAssertEqual(model.query, "")
+        XCTAssertEqual(model.query, "AAPL")
         XCTAssertTrue(model.results.isEmpty)
         XCTAssertNil(model.message)
         XCTAssertFalse(model.isSearching)

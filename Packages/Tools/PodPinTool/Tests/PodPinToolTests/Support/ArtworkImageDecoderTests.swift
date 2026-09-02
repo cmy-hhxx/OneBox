@@ -42,8 +42,9 @@ private final class ArtworkGeneratorProbe: @unchecked Sendable {
 }
 
 final class ArtworkImageDecoderTests: XCTestCase {
-    func testCooperativeTimeoutCancelsAndDrainsOperation() async {
-        let result = await withCooperativeTimeout(.milliseconds(20)) {
+    func testCooperativeTimeoutCancelsOperation() async {
+        let owner = CooperativeTaskOwner()
+        let result = await withCooperativeTimeout(.milliseconds(20), owner: owner) {
             do {
                 try await Task.sleep(for: .seconds(3_600))
                 return 1
@@ -55,6 +56,30 @@ final class ArtworkImageDecoderTests: XCTestCase {
         guard case .timedOut = result else {
             return XCTFail("Expected timeout to win")
         }
+        await owner.cancelAndWait()
+    }
+
+    func testCooperativeTimeoutDoesNotAwaitANonCooperativeOperation() async {
+        let gate = NonCooperativeOperationGate()
+        let owner = CooperativeTaskOwner()
+        let clock = ContinuousClock()
+        let startedAt = clock.now
+
+        let result = await withCooperativeTimeout(.milliseconds(20), owner: owner) {
+            await gate.wait()
+            return 1
+        }
+
+        let elapsed = startedAt.duration(to: clock.now)
+        guard case .timedOut = result else {
+            await gate.release()
+            return XCTFail("Expected timeout to win")
+        }
+        XCTAssertLessThan(elapsed, .milliseconds(200))
+        XCTAssertEqual(owner.activeTaskCount, 1)
+        await gate.release()
+        await owner.cancelAndWait()
+        XCTAssertEqual(owner.activeTaskCount, 0)
     }
 
     func testCancellationStopsWaitingAndRejectsLateGeneratorResult() async {
@@ -78,7 +103,8 @@ final class ArtworkImageDecoderTests: XCTestCase {
 
     func testTimeoutCancelsGeneratorRequestAndDrainsDecoder() async {
         let probe = ArtworkGeneratorProbe()
-        let result = await withCooperativeTimeout(.milliseconds(20)) {
+        let owner = CooperativeTaskOwner()
+        let result = await withCooperativeTimeout(.milliseconds(20), owner: owner) {
             await ArtworkImageDecoder.thumbnail(
                 at: URL(fileURLWithPath: "/tmp/extensionless-artwork"),
                 maxPixelSize: 48,
@@ -90,6 +116,7 @@ final class ArtworkImageDecoderTests: XCTestCase {
             return XCTFail("Expected generator request to time out")
         }
         XCTAssertGreaterThanOrEqual(probe.recordedCancelCount(), 1)
+        await owner.cancelAndWait()
     }
 
     func testQuickLookThumbnailDecoderReturnsBoundedImage() async throws {
@@ -102,7 +129,8 @@ final class ArtworkImageDecoderTests: XCTestCase {
         let imageURL = root.appendingPathComponent("artwork")
         try makePNGData().write(to: imageURL, options: .atomic)
 
-        let result = await withCooperativeTimeout(.seconds(2)) {
+        let owner = CooperativeTaskOwner()
+        let result = await withCooperativeTimeout(.seconds(2), owner: owner) {
             await ArtworkImageDecoder.thumbnail(at: imageURL, maxPixelSize: 48)
         }
 
@@ -111,6 +139,7 @@ final class ArtworkImageDecoderTests: XCTestCase {
         }
         XCTAssertLessThanOrEqual(image.width, 48)
         XCTAssertLessThanOrEqual(image.height, 48)
+        await owner.cancelAndWait()
     }
 
     private func makeCGImage() -> CGImage {
@@ -134,5 +163,23 @@ final class ArtworkImageDecoderTests: XCTestCase {
             throw CocoaError(.fileWriteUnknown)
         }
         return data
+    }
+}
+
+private actor NonCooperativeOperationGate {
+    private var isReleased = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        guard !isReleased else { return }
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func release() {
+        isReleased = true
+        continuation?.resume()
+        continuation = nil
     }
 }

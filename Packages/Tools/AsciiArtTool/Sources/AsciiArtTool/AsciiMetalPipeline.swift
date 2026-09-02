@@ -1,7 +1,6 @@
-import MetalKit
+@preconcurrency import MetalKit
 
-@MainActor
-final class AsciiMetalPipeline {
+final class AsciiMetalPipeline: @unchecked Sendable {
     let device: MTLDevice
     private let pipelineState: MTLRenderPipelineState
     private let samplerState: MTLSamplerState

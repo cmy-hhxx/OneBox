@@ -39,6 +39,7 @@ struct StockWatchStorage: Sendable {
     #if DEBUG || STOCKWATCH_BENCHMARK
         private let importStageObserverForTesting:
             (@Sendable (StockWatchStorageImportStage) async -> Void)?
+        private let databaseOpenerForTesting: (@Sendable (URL) throws -> MarketDatabase)?
     #endif
 
     init(fileManager: FileManager = .default) {
@@ -49,6 +50,7 @@ struct StockWatchStorage: Sendable {
             ).first
         #if DEBUG || STOCKWATCH_BENCHMARK
             importStageObserverForTesting = nil
+            databaseOpenerForTesting = nil
         #endif
     }
 
@@ -56,10 +58,12 @@ struct StockWatchStorage: Sendable {
         init(
             applicationSupportDirectory: URL,
             importStageObserverForTesting:
-                (@Sendable (StockWatchStorageImportStage) async -> Void)? = nil
+                (@Sendable (StockWatchStorageImportStage) async -> Void)? = nil,
+            databaseOpenerForTesting: (@Sendable (URL) throws -> MarketDatabase)? = nil
         ) {
             self.applicationSupportDirectory = applicationSupportDirectory
             self.importStageObserverForTesting = importStageObserverForTesting
+            self.databaseOpenerForTesting = databaseOpenerForTesting
         }
     #else
         init(applicationSupportDirectory: URL) {
@@ -106,6 +110,7 @@ struct StockWatchStorage: Sendable {
         let canonicalExistedAtEntry = fileManager.fileExists(atPath: databaseURL.path)
         let directory = databaseURL.deletingLastPathComponent()
         var importedLegacyDatabase = false
+        var ownsCanonicalDatabase = false
 
         do {
             try cancellationToken.checkCancellation()
@@ -133,12 +138,26 @@ struct StockWatchStorage: Sendable {
             }
 
             try cancellationToken.checkCancellation()
-            let database = try MarketDatabase.openInDirectory(
-                directory,
-                fileName: Self.databaseFileName,
-                fileManager: fileManager,
-                cancellationToken: cancellationToken
-            )
+            ownsCanonicalDatabase =
+                importedLegacyDatabase
+                || !fileManager.fileExists(atPath: databaseURL.path)
+            #if DEBUG || STOCKWATCH_BENCHMARK
+                let database =
+                    try databaseOpenerForTesting?(databaseURL)
+                    ?? MarketDatabase.openInDirectory(
+                        directory,
+                        fileName: Self.databaseFileName,
+                        fileManager: fileManager,
+                        cancellationToken: cancellationToken
+                    )
+            #else
+                let database = try MarketDatabase.openInDirectory(
+                    directory,
+                    fileName: Self.databaseFileName,
+                    fileManager: fileManager,
+                    cancellationToken: cancellationToken
+                )
+            #endif
             do {
                 try cancellationToken.checkCancellation()
                 return database
@@ -147,11 +166,46 @@ struct StockWatchStorage: Sendable {
                 throw error
             }
         } catch {
-            if importedLegacyDatabase
-                || (!canonicalExistedAtEntry && error is CancellationError)
-            {
+            if ownsCanonicalDatabase {
                 Self.removeDatabaseFiles(at: databaseURL, fileManager: fileManager)
             }
+            throw error
+        }
+    }
+
+    @concurrent
+    func clearQuoteCache() async throws {
+        let cancellationToken = DatabaseCancellationToken()
+        try await withTaskCancellationHandler {
+            try await clearQuoteCache(cancellationToken: cancellationToken)
+        } onCancel: {
+            cancellationToken.cancel()
+        }
+    }
+
+    @concurrent
+    private func clearQuoteCache(
+        cancellationToken: DatabaseCancellationToken
+    ) async throws {
+        guard let databaseURL else {
+            throw MarketDatabaseError.applicationSupportUnavailable
+        }
+        try cancellationToken.checkCancellation()
+        guard FileManager.default.fileExists(atPath: databaseURL.path) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        let database = try MarketDatabase.open(
+            atPath: databaseURL.path,
+            cancellationToken: cancellationToken
+        )
+        do {
+            try cancellationToken.checkCancellation()
+            try await database.clearQuotes()
+            try cancellationToken.checkCancellation()
+            try await database.close()
+        } catch {
+            try? await database.close()
             throw error
         }
     }
@@ -247,7 +301,7 @@ struct StockWatchStorage: Sendable {
             try cancellationToken.checkCancellation()
             let instruments = try await database.loadWatchlist()
             try cancellationToken.checkCancellation()
-            _ = try await database.loadLatestQuotes(for: instruments)
+            try await database.validateLatestQuotes(for: instruments)
             try cancellationToken.checkCancellation()
             _ = try await database.loadAlertSettings()
             try cancellationToken.checkCancellation()

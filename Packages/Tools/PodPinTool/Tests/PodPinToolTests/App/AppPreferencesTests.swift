@@ -6,6 +6,26 @@ import XCTest
 
 @MainActor
 final class AppPreferencesTests: XCTestCase {
+    func testIndependentAppPreferenceKeysRestoreWithoutMigration() throws {
+        let suiteName = "AppPreferencesIndependentSuiteTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(0.68, forKey: "podpin.nowPlayingContentOpacity")
+        defaults.set(1.5, forKey: "podpin.playbackRate")
+        defaults.set(0.42, forKey: "podpin.playbackVolume")
+        defaults.set(
+            try JSONEncoder().encode(LibraryCollection.downloaded),
+            forKey: "podpin.lastLibraryCollection"
+        )
+
+        let preferences = AppPreferences(defaults: defaults)
+
+        XCTAssertEqual(preferences.nowPlayingContentOpacity, 0.68)
+        XCTAssertEqual(preferences.playbackRate, 1.5)
+        XCTAssertEqual(preferences.playbackVolume, 0.42)
+        XCTAssertEqual(preferences.lastLibraryCollection, .downloaded)
+    }
+
     func testNowPlayingContentOpacityRestoresClampsAndPersists() throws {
         let suiteName = "AppPreferencesTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

@@ -158,6 +158,21 @@ struct AsciiImageDecoderTests {
         }
     }
 
+    @Test
+    func `declared raster dimensions reject decompression bombs before decode`() throws {
+        do {
+            try AsciiImageDecoder.validateDeclaredRasterDimensions(width: 30_000, height: 20_000)
+            Issue.record("Oversized declared dimensions unexpectedly passed validation")
+        } catch let error as AsciiToolError {
+            #expect(error == .imageDimensionsTooLarge)
+        }
+    }
+
+    @Test
+    func `declared raster dimensions accept a bounded source`() throws {
+        try AsciiImageDecoder.validateDeclaredRasterDimensions(width: 8_000, height: 4_000)
+    }
+
     private func temporaryURL(extension fileExtension: String) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: UUID().uuidString, directoryHint: .isDirectory)

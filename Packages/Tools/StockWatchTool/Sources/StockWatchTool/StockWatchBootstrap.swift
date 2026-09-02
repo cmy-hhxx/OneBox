@@ -22,16 +22,23 @@ struct StockWatchStartupFailure: Equatable, Sendable {
     let message: String
     let databasePath: String
     let shutdownFailure: StockWatchShutdownFailure?
+    let canClearQuoteCache: Bool
 
     init(
         message: String,
         databasePath: String,
-        shutdownFailure: StockWatchShutdownFailure? = nil
+        shutdownFailure: StockWatchShutdownFailure? = nil,
+        canClearQuoteCache: Bool = false
     ) {
         self.message = message
         self.databasePath = databasePath
         self.shutdownFailure = shutdownFailure
+        self.canClearQuoteCache = canClearQuoteCache
     }
+}
+
+enum StockWatchStartupError: Error, Sendable {
+    case quoteCacheUnavailable
 }
 
 @MainActor
@@ -162,9 +169,16 @@ struct StockWatchMountedRun {
 
 @MainActor
 final class StockWatchBootstrap: ObservableObject {
+    private enum RunRequest: Sendable {
+        case retry
+        case clearQuoteCache
+    }
+
     @Published private(set) var mountedRun: StockWatchMountedRun?
     @Published private(set) var failure: StockWatchStartupFailure?
     @Published private(set) var isStarting = false
+    @Published private(set) var isClearingQuoteCache = false
+    @Published private(set) var quoteCacheRecoveryMessage: String?
 
     var store: MonitorStore? { mountedRun?.store }
     var preferences: StockWatchPreferences? { mountedRun?.preferences }
@@ -176,8 +190,9 @@ final class StockWatchBootstrap: ObservableObject {
     private let databasePath: String
     private let databaseFactory: @Sendable () async throws -> MarketDatabase
     private let databaseClose: @Sendable (MarketDatabase) async throws -> Void
-    private let retryRequests: AsyncStream<Void>
-    private let retryContinuation: AsyncStream<Void>.Continuation
+    private let quoteCacheClear: @Sendable () async throws -> Void
+    private let runRequests: AsyncStream<RunRequest>
+    private let runRequestContinuation: AsyncStream<RunRequest>.Continuation
     private var leaseID: UUID?
     private var isRunning = false
 
@@ -196,7 +211,8 @@ final class StockWatchBootstrap: ObservableObject {
             client: client,
             alertSoundPlayer: AlertSoundPlayer(platform: platform),
             databasePath: storage.databasePath,
-            databaseFactory: { try await storage.open() }
+            databaseFactory: { try await storage.open() },
+            quoteCacheClear: { try await storage.clearQuoteCache() }
         )
     }
 
@@ -209,6 +225,9 @@ final class StockWatchBootstrap: ObservableObject {
         databaseFactory: @escaping @Sendable () async throws -> MarketDatabase,
         databaseClose: @escaping @Sendable (MarketDatabase) async throws -> Void = {
             try $0.close()
+        },
+        quoteCacheClear: @escaping @Sendable () async throws -> Void = {
+            throw CocoaError(.featureUnsupported)
         }
     ) {
         self.lifecycleCoordinator = lifecycleCoordinator
@@ -218,7 +237,8 @@ final class StockWatchBootstrap: ObservableObject {
         self.databasePath = databasePath
         self.databaseFactory = databaseFactory
         self.databaseClose = databaseClose
-        (retryRequests, retryContinuation) = AsyncStream.makeStream(
+        self.quoteCacheClear = quoteCacheClear
+        (runRequests, runRequestContinuation) = AsyncStream.makeStream(
             bufferingPolicy: .bufferingNewest(1)
         )
     }
@@ -229,10 +249,15 @@ final class StockWatchBootstrap: ObservableObject {
         defer { isRunning = false }
 
         await start()
-        for await _ in retryRequests {
+        for await request in runRequests {
             guard !Task.isCancelled else { break }
-            guard mountedRun == nil else { continue }
-            await start(retryingShutdownFailure: true)
+            switch request {
+            case .retry:
+                guard mountedRun == nil else { continue }
+                await start(retryingShutdownFailure: true)
+            case .clearQuoteCache:
+                await clearQuoteCacheAndRetry()
+            }
         }
 
         await shutdown()
@@ -330,13 +355,17 @@ final class StockWatchBootstrap: ObservableObject {
                 failure = StockWatchStartupFailure(
                     message: Self.safeStartupMessage(for: error),
                     databasePath: (error as? StockWatchStorageError)?.recoveryDatabasePath
-                        ?? databasePath
+                        ?? databasePath,
+                    canClearQuoteCache: error is StockWatchStartupError
                 )
             }
         }
     }
 
     private static func safeStartupMessage(for error: Error) -> String {
+        if error is StockWatchStartupError {
+            return tr("行情缓存损坏，无法安全恢复。")
+        }
         if error is StockWatchStorageError {
             return tr("无法安全导入独立 MarketSprite 数据库。请检查旧应用已完全退出且数据库有效。")
         }
@@ -353,7 +382,36 @@ final class StockWatchBootstrap: ObservableObject {
 
     func requestRetry() {
         guard mountedRun == nil, failure != nil, !isStarting else { return }
-        retryContinuation.yield()
+        runRequestContinuation.yield(.retry)
+    }
+
+    func requestQuoteCacheClear() {
+        guard mountedRun == nil,
+            failure?.canClearQuoteCache == true,
+            !isStarting,
+            !isClearingQuoteCache
+        else {
+            return
+        }
+
+        isClearingQuoteCache = true
+        quoteCacheRecoveryMessage = nil
+        runRequestContinuation.yield(.clearQuoteCache)
+    }
+
+    private func clearQuoteCacheAndRetry() async {
+        guard isClearingQuoteCache else { return }
+        defer { isClearingQuoteCache = false }
+        do {
+            try await quoteCacheClear()
+            try Task.checkCancellation()
+            quoteCacheRecoveryMessage = tr("行情缓存已清空，正在重试")
+            await start(retryingShutdownFailure: true)
+        } catch is CancellationError {
+            return
+        } catch {
+            quoteCacheRecoveryMessage = tr("清空行情缓存失败")
+        }
     }
 
     @discardableResult

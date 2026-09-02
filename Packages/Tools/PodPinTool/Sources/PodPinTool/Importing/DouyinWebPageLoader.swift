@@ -13,8 +13,10 @@ private final class DouyinWebSession: NSObject, WKNavigationDelegate {
     private let cookies: [HTTPCookie]
     private let dataStore: WKWebsiteDataStore
     private let webView: WKWebView
+    private let timeoutTaskOwner = CooperativeTaskOwner()
     private var navigationContinuation: CheckedContinuation<Void, Error>?
     private var rejectedNavigation = false
+    private var isDestroyed = false
 
     private init(sourceURL: URL, cookies: [HTTPCookie]) {
         self.sourceURL = sourceURL
@@ -51,8 +53,10 @@ private final class DouyinWebSession: NSObject, WKNavigationDelegate {
         defer { destroy() }
         return try await withTaskCancellationHandler {
             for cookie in cookies {
-                await set(cookie: cookie)
+                try Task.checkCancellation()
+                try await set(cookie: cookie)
             }
+            try Task.checkCancellation()
             try await loadInitialPage()
 
             var lastSnapshot: Snapshot?
@@ -85,15 +89,41 @@ private final class DouyinWebSession: NSObject, WKNavigationDelegate {
     }
 
     private func loadInitialPage() async throws {
+        try Task.checkCancellation()
+        guard !isDestroyed else { throw CancellationError() }
         var request = URLRequest(
             url: sourceURL,
             cachePolicy: .reloadIgnoringLocalAndRemoteCacheData,
             timeoutInterval: 20
         )
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
-        try await withCheckedThrowingContinuation { continuation in
-            navigationContinuation = continuation
-            webView.load(request)
+        let result = await withCooperativeTimeout(
+            .seconds(20),
+            owner: timeoutTaskOwner
+        ) { @MainActor [weak self] in
+            guard let self, !isDestroyed else { return WebKitWaitResult.cancelled }
+            do {
+                try await withCheckedThrowingContinuation { continuation in
+                    navigationContinuation = continuation
+                    webView.load(request)
+                }
+                return .completed
+            } catch is CancellationError {
+                return .cancelled
+            } catch {
+                return .failed(error)
+            }
+        }
+        switch result {
+        case .value(.completed):
+            return
+        case .value(.cancelled):
+            throw CancellationError()
+        case .value(.failed(let error)):
+            throw error
+        case .timedOut:
+            try Task.checkCancellation()
+            throw DouyinPageLoadError.timeout("initial-navigation")
         }
     }
 
@@ -105,7 +135,7 @@ private final class DouyinWebSession: NSObject, WKNavigationDelegate {
             let userAgent = snapshot.userAgent?.trimmedNonEmpty
         else { return nil }
         let artworkURL = snapshot.artwork.flatMap(URL.init(string:))
-        let pageCookies = await allCookies()
+        let pageCookies = try await allCookies()
         let duration = snapshot.duration.flatMap { value in
             value.isFinite && value > 0 ? value : nil
         }
@@ -133,29 +163,65 @@ private final class DouyinWebSession: NSObject, WKNavigationDelegate {
         }
     }
 
-    private func set(cookie: HTTPCookie) async {
-        await withCheckedContinuation { continuation in
-            dataStore.httpCookieStore.setCookie(cookie) {
-                continuation.resume()
+    private func set(cookie: HTTPCookie) async throws {
+        try Task.checkCancellation()
+        guard !isDestroyed else { throw CancellationError() }
+        let result = await withCooperativeTimeout(
+            .seconds(5),
+            owner: timeoutTaskOwner
+        ) { @MainActor [dataStore] in
+            await withCheckedContinuation { continuation in
+                dataStore.httpCookieStore.setCookie(cookie) {
+                    continuation.resume()
+                }
             }
         }
+        guard case .value = result else {
+            try Task.checkCancellation()
+            throw DouyinPageLoadError.timeout("cookie-set")
+        }
+        try Task.checkCancellation()
     }
 
-    private func allCookies() async -> [HTTPCookie] {
-        await withCheckedContinuation { continuation in
-            dataStore.httpCookieStore.getAllCookies { cookies in
-                continuation.resume(returning: cookies)
+    private func allCookies() async throws -> [HTTPCookie] {
+        try Task.checkCancellation()
+        guard !isDestroyed else { throw CancellationError() }
+        let result = await withCooperativeTimeout(
+            .seconds(5),
+            owner: timeoutTaskOwner
+        ) { @MainActor [dataStore] in
+            await withCheckedContinuation { continuation in
+                dataStore.httpCookieStore.getAllCookies { cookies in
+                    continuation.resume(returning: cookies)
+                }
             }
+        }
+        switch result {
+        case .value(let cookies):
+            try Task.checkCancellation()
+            return cookies
+        case .timedOut:
+            try Task.checkCancellation()
+            throw DouyinPageLoadError.timeout("cookie-read")
         }
     }
 
     private func destroy() {
+        guard !isDestroyed else { return }
+        isDestroyed = true
+        timeoutTaskOwner.cancelAll()
         webView.stopLoading()
         webView.navigationDelegate = nil
         if let continuation = navigationContinuation {
             navigationContinuation = nil
             continuation.resume(throwing: CancellationError())
         }
+    }
+
+    private enum WebKitWaitResult: @unchecked Sendable {
+        case completed
+        case cancelled
+        case failed(any Error)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

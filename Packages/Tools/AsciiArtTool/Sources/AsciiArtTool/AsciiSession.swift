@@ -11,16 +11,24 @@ final class AsciiSession {
     private(set) var sourceRevision = 0
     private(set) var isImporting = false
     private(set) var isMetalReady = false
+    private(set) var metalRetryRevision = 0
 
     private var isVisible = false
-    private var isWindowActive = true
+    private var isSceneActive = true
+    private var isWindowVisible = true
     private var reduceMotion = false
     private var wantsPlayback = true
     private var manuallyEnabledWithReduceMotion = false
     private var importGeneration = 0
     private var operationError: AsciiToolError?
     private var isMetalUnavailable = false
+    private(set) var allowsTransientWork = true
     @ObservationIgnored private var importTask: Task<Void, Never>?
+    @ObservationIgnored let asyncWorkOwner: AsciiAsyncWorkOwner
+
+    init(asyncWorkOwner: AsciiAsyncWorkOwner = AsciiAsyncWorkOwner()) {
+        self.asyncWorkOwner = asyncWorkOwner
+    }
 
     var statusError: AsciiToolError? {
         isMetalUnavailable ? .metalUnavailable : operationError
@@ -55,7 +63,7 @@ final class AsciiSession {
     }
 
     var isAnimationActive: Bool {
-        isVisible && isWindowActive && settings.animation != .off && wantsPlayback
+        isVisible && isSceneActive && isWindowVisible && settings.animation != .off && wantsPlayback
             && (!reduceMotion || manuallyEnabledWithReduceMotion)
     }
 
@@ -63,8 +71,12 @@ final class AsciiSession {
         self.isVisible = isVisible
     }
 
-    func setWindowActive(_ isWindowActive: Bool) {
-        self.isWindowActive = isWindowActive
+    func setSceneActive(_ isSceneActive: Bool) {
+        self.isSceneActive = isSceneActive
+    }
+
+    func setWindowVisible(_ isWindowVisible: Bool) {
+        self.isWindowVisible = isWindowVisible
     }
 
     func setReduceMotion(_ reduceMotion: Bool) {
@@ -98,16 +110,19 @@ final class AsciiSession {
     }
 
     func importImage(from url: URL) {
+        guard allowsTransientWork else { return }
         importTask?.cancel()
         importGeneration += 1
         let generation = importGeneration
         isImporting = true
         operationError = nil
+        let asyncWorkOwner = asyncWorkOwner
 
         importTask = Task { [weak self] in
             do {
                 let decoded = try await AsciiAsyncDeadline.run(
-                    for: AsciiAsyncDeadline.imageImport
+                    for: AsciiAsyncDeadline.imageImport,
+                    owner: asyncWorkOwner
                 ) {
                     try await AsciiImageDecoder.decode(url)
                 }
@@ -119,6 +134,10 @@ final class AsciiSession {
             } catch is CancellationError {
                 guard let self, generation == self.importGeneration else { return }
                 isImporting = false
+            } catch is AsciiTimeoutError {
+                guard let self, generation == self.importGeneration else { return }
+                isImporting = false
+                report(.importTimedOut)
             } catch let error as AsciiToolError {
                 guard let self, generation == self.importGeneration else { return }
                 isImporting = false
@@ -136,6 +155,12 @@ final class AsciiSession {
         isMetalUnavailable = !isReady
     }
 
+    func retryMetalPreparation() {
+        guard isMetalUnavailable else { return }
+        isMetalUnavailable = false
+        metalRetryRevision &+= 1
+    }
+
     func report(_ error: AsciiToolError) {
         if error == .metalUnavailable {
             isMetalReady = false
@@ -150,9 +175,32 @@ final class AsciiSession {
     }
 
     func cancelTransientTasks() {
+        allowsTransientWork = false
         importGeneration += 1
         importTask?.cancel()
         importTask = nil
+        asyncWorkOwner.cancelAll()
         isImporting = false
+    }
+
+    /// Re-enables transient work only after the previous generation has drained.
+    /// A non-cooperative framework operation keeps the session gated rather than
+    /// allowing a new generation to overlap it, without blocking the view task.
+    func resumeTransientTasks() async {
+        guard !allowsTransientWork else { return }
+        while asyncWorkOwner.activeTaskCount > 0 {
+            guard !Task.isCancelled else { return }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        allowsTransientWork = true
+    }
+
+    func shutdown() async {
+        let importTask = importTask
+        cancelTransientTasks()
+        if let importTask {
+            await importTask.value
+        }
+        _ = await asyncWorkOwner.cancelAndWait(upTo: .seconds(1))
     }
 }

@@ -42,6 +42,7 @@ final class NowPlayingController {
     private let commandCenter: MPRemoteCommandCenter?
     private let nowPlayingInfoCenter: MPNowPlayingInfoCenter?
     private let artworkLoader: @Sendable (URL) async -> NowPlayingDecodedArtwork?
+    private let timeoutTaskOwner = CooperativeTaskOwner()
     private var commandTargets: [(MPRemoteCommand, Any)] = []
     private var artworkLoadTask: Task<Void, Never>?
     private var cachedArtworkKey: ArtworkKey?
@@ -97,9 +98,11 @@ final class NowPlayingController {
 
     func deactivate() async {
         artworkLoadTask?.cancel()
+        timeoutTaskOwner.cancelAll()
         if let artworkLoadTask {
             await artworkLoadTask.value
         }
+        _ = await timeoutTaskOwner.cancelAndWait(upTo: .seconds(1))
         self.artworkLoadTask = nil
         removeCommandHandlers()
         if let commandCenter {
@@ -206,8 +209,12 @@ final class NowPlayingController {
         }
 
         let artworkLoader = artworkLoader
+        let timeoutTaskOwner = timeoutTaskOwner
         artworkLoadTask = Task { @MainActor [weak self] in
-            let result = await withCooperativeTimeout(.seconds(2)) {
+            let result = await withCooperativeTimeout(
+                .seconds(2),
+                owner: timeoutTaskOwner
+            ) {
                 await artworkLoader(url)
             }
             guard !Task.isCancelled,

@@ -101,7 +101,7 @@ struct StockWatchWorkspaceView: View {
             }
         }
         .animation(
-            reduceMotion ? nil : .easeOut(duration: 0.18),
+            reduceMotion ? .easeInOut(duration: 0.12) : .easeOut(duration: 0.18),
             value: store.activeAlert?.id
         )
     }

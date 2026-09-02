@@ -30,7 +30,6 @@ struct StockWatchToolbar: View {
             Button("添加标的", systemImage: "plus", action: addInstrument)
                 .buttonStyle(.borderedProminent)
                 .tint(palette.accent)
-                .keyboardShortcut("n", modifiers: .command)
                 .accessibilityInputLabels(["添加标的", "搜索标的"])
 
             Menu {

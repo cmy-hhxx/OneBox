@@ -18,6 +18,7 @@ final class AsciiMetalCoordinator: NSObject, MTKViewDelegate {
     private var drawingFailed = false
     private var reportedReadiness: Bool?
     private var animationStartTime = ProcessInfo.processInfo.systemUptime
+    private var lastRetryRevision = -1
 
     init(cache: AsciiRenderCache, onReadinessChanged: @escaping (Bool) -> Void) {
         self.cache = cache
@@ -29,8 +30,15 @@ final class AsciiMetalCoordinator: NSObject, MTKViewDelegate {
         source: AsciiSource?,
         sourceRevision: Int,
         snapshot: AsciiRenderSnapshot?,
-        isAnimating: Bool
+        isAnimating: Bool,
+        retryRevision: Int
     ) {
+        if retryRevision != lastRetryRevision {
+            lastRetryRevision = retryRevision
+            preparationFailed = false
+            drawingFailed = false
+            reportedReadiness = nil
+        }
         self.snapshot = snapshot
         pendingSource = source
         pendingSourceRevision = sourceRevision

@@ -17,6 +17,11 @@ protocol HTTPTransporting: Sendable {
         for request: URLRequest,
         progress: @escaping @Sendable (DownloadProgressSnapshot) -> Void
     ) async throws -> HTTPDownloadResponse
+    func download(
+        for request: URLRequest,
+        redirectValidator: @escaping @Sendable (URL, URL) -> Bool,
+        progress: @escaping @Sendable (DownloadProgressSnapshot) -> Void
+    ) async throws -> HTTPDownloadResponse
 }
 
 extension HTTPTransporting {
@@ -36,6 +41,14 @@ extension HTTPTransporting {
         let response = try await download(for: request)
         progress(.complete)
         return response
+    }
+
+    func download(
+        for request: URLRequest,
+        redirectValidator: @escaping @Sendable (URL, URL) -> Bool,
+        progress: @escaping @Sendable (DownloadProgressSnapshot) -> Void
+    ) async throws -> HTTPDownloadResponse {
+        try await download(for: request, progress: progress)
     }
 }
 
@@ -87,14 +100,71 @@ struct URLSessionHTTPTransport: HTTPTransporting {
             throw ContentImportError.platformUnavailable("网络请求失败，请稍后重试。")
         }
     }
+
+    func download(
+        for request: URLRequest,
+        redirectValidator: @escaping @Sendable (URL, URL) -> Bool,
+        progress: @escaping @Sendable (DownloadProgressSnapshot) -> Void
+    ) async throws -> HTTPDownloadResponse {
+        do {
+            progress(.indeterminate)
+            let response = try await HTTPDownloadOperation(
+                session: session,
+                request: request,
+                redirectValidator: redirectValidator,
+                progress: progress
+            ).run()
+            progress(.complete)
+            return response
+        } catch is CancellationError {
+            throw ContentImportError.cancelled
+        } catch let error as ContentImportError {
+            throw error
+        } catch {
+            throw ContentImportError.platformUnavailable("网络请求失败，请稍后重试。")
+        }
+    }
+}
+
+private final class HTTPDownloadRedirectDelegate: NSObject, URLSessionTaskDelegate,
+    @unchecked Sendable
+{
+    private let originalURL: URL
+    private let redirectValidator: @Sendable (URL, URL) -> Bool
+
+    init(
+        originalURL: URL,
+        redirectValidator: @escaping @Sendable (URL, URL) -> Bool
+    ) {
+        self.originalURL = originalURL
+        self.redirectValidator = redirectValidator
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        guard let redirectedURL = request.url,
+            redirectValidator(originalURL, redirectedURL)
+        else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
+    }
 }
 
 private final class HTTPDownloadOperation: @unchecked Sendable {
-    private let session: URLSession
+    private let baseSession: URLSession
     private let request: URLRequest
+    private let redirectValidator: (@Sendable (URL, URL) -> Bool)?
     private let progress: @Sendable (DownloadProgressSnapshot) -> Void
     private let fileManager: FileManager
     private let lock = NSLock()
+    private var ownedSession: URLSession?
     private var task: URLSessionDownloadTask?
     private var observation: NSKeyValueObservation?
     private var continuation: CheckedContinuation<HTTPDownloadResponse, Error>?
@@ -104,11 +174,13 @@ private final class HTTPDownloadOperation: @unchecked Sendable {
     init(
         session: URLSession,
         request: URLRequest,
+        redirectValidator: (@Sendable (URL, URL) -> Bool)? = nil,
         progress: @escaping @Sendable (DownloadProgressSnapshot) -> Void,
         fileManager: FileManager = .default
     ) {
-        self.session = session
+        baseSession = session
         self.request = request
+        self.redirectValidator = redirectValidator
         self.progress = progress
         self.fileManager = fileManager
     }
@@ -117,6 +189,24 @@ private final class HTTPDownloadOperation: @unchecked Sendable {
         try await withTaskCancellationHandler {
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
+                let ownedSession: URLSession?
+                let session: URLSession
+                if let redirectValidator, let originalURL = request.url {
+                    let delegate = HTTPDownloadRedirectDelegate(
+                        originalURL: originalURL,
+                        redirectValidator: redirectValidator
+                    )
+                    let createdSession = URLSession(
+                        configuration: baseSession.configuration,
+                        delegate: delegate,
+                        delegateQueue: nil
+                    )
+                    session = createdSession
+                    ownedSession = createdSession
+                } else {
+                    session = baseSession
+                    ownedSession = nil
+                }
                 let task = session.downloadTask(with: request) { [weak self] url, response, error in
                     self?.complete(temporaryURL: url, response: response, error: error)
                 }
@@ -125,9 +215,16 @@ private final class HTTPDownloadOperation: @unchecked Sendable {
                 ) { [weak self] value, _ in
                     self?.reportProgress(value)
                 }
-                guard install(task: task, observation: observation, continuation: continuation)
+                guard
+                    install(
+                        ownedSession: ownedSession,
+                        task: task,
+                        observation: observation,
+                        continuation: continuation
+                    )
                 else {
                     observation.invalidate()
+                    ownedSession?.invalidateAndCancel()
                     continuation.resume(throwing: CancellationError())
                     return
                 }
@@ -150,20 +247,6 @@ private final class HTTPDownloadOperation: @unchecked Sendable {
                 fraction: value.totalUnitCount > 0 ? value.fractionCompleted : nil,
                 bytesPerSecond: speed
             ))
-    }
-
-    private func install(
-        task: URLSessionDownloadTask,
-        observation: NSKeyValueObservation,
-        continuation: CheckedContinuation<HTTPDownloadResponse, Error>
-    ) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !isCancelled else { return false }
-        self.task = task
-        self.observation = observation
-        self.continuation = continuation
-        return true
     }
 
     private func complete(temporaryURL: URL?, response: URLResponse?, error: Error?) {
@@ -193,6 +276,22 @@ private final class HTTPDownloadOperation: @unchecked Sendable {
         }
     }
 
+    private func install(
+        ownedSession: URLSession?,
+        task: URLSessionDownloadTask,
+        observation: NSKeyValueObservation,
+        continuation: CheckedContinuation<HTTPDownloadResponse, Error>
+    ) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isCancelled else { return false }
+        self.ownedSession = ownedSession
+        self.task = task
+        self.observation = observation
+        self.continuation = continuation
+        return true
+    }
+
     private func cancel() {
         lock.lock()
         isCancelled = true
@@ -206,9 +305,11 @@ private final class HTTPDownloadOperation: @unchecked Sendable {
         lock.lock()
         let continuation = self.continuation
         let observation = self.observation
+        let ownedSession = self.ownedSession
         let shouldDiscardResult = isCancelled
         self.continuation = nil
         self.observation = nil
+        self.ownedSession = nil
         task = nil
         lock.unlock()
 
@@ -219,6 +320,7 @@ private final class HTTPDownloadOperation: @unchecked Sendable {
             return
         }
         observation?.invalidate()
+        ownedSession?.finishTasksAndInvalidate()
         continuation.resume(with: result)
     }
 }

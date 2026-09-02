@@ -93,6 +93,7 @@ if [[ "$live_downloads" == "YES" ]]; then
 fi
 
 "$script_directory/bootstrap.sh"
+"$script_directory/check-coverage-configuration.sh"
 
 # Offline-tool packaging re-signs the local app. Remove that disposable bundle
 # so a later test build cannot mix its signature with XCTest products.

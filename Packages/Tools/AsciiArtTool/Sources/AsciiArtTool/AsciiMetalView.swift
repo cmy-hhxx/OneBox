@@ -8,9 +8,12 @@ struct AsciiMetalView: NSViewRepresentable {
     let sourceRevision: Int
     let snapshot: AsciiRenderSnapshot?
     let isAnimating: Bool
+    let allowsTransientWork: Bool
+    let retryRevision: Int
     let onPan: (CGSize, CGSize) -> Void
     let onZoom: (Double, CGPoint, CGSize) -> Void
     let onReset: () -> Void
+    let onWindowVisibilityChanged: (Bool) -> Void
     let onReadinessChanged: (Bool) -> Void
 
     func makeCoordinator() -> AsciiMetalCoordinator {
@@ -31,6 +34,7 @@ struct AsciiMetalView: NSViewRepresentable {
         view.onPan = onPan
         view.onZoom = onZoom
         view.onReset = onReset
+        view.onWindowVisibilityChanged = onWindowVisibilityChanged
         view.setAccessibilityElement(true)
         view.setAccessibilityRole(.group)
         view.setAccessibilityLabel("ASCII 画布")
@@ -41,12 +45,14 @@ struct AsciiMetalView: NSViewRepresentable {
         view.onPan = onPan
         view.onZoom = onZoom
         view.onReset = onReset
+        view.onWindowVisibilityChanged = onWindowVisibilityChanged
         context.coordinator.update(
             view: view,
             source: source,
             sourceRevision: sourceRevision,
             snapshot: snapshot,
-            isAnimating: isAnimating
+            isAnimating: isAnimating,
+            retryRevision: retryRevision
         )
     }
 
@@ -57,5 +63,6 @@ struct AsciiMetalView: NSViewRepresentable {
         view.onPan = nil
         view.onZoom = nil
         view.onReset = nil
+        view.onWindowVisibilityChanged = nil
     }
 }

@@ -226,9 +226,8 @@ struct ImportWorkspaceView: View {
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(2)
                     Text(
-                        metadata.author?.isEmpty == false
-                            ? metadata.author!
-                            : sourceLabel(for: metadata.platform)
+                        metadata.author.flatMap { $0.isEmpty ? nil : $0 }
+                            ?? sourceLabel(for: metadata.platform)
                     )
                     .font(DesignTypography.metadata)
                     .foregroundStyle(palette.textSecondary)

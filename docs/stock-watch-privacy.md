@@ -9,7 +9,7 @@
 | 内容 | 位置 |
 | --- | --- |
 | 有序观察列表、最近交易日行情与分钟缓存、provider 来源和时间、百分比提醒、每标的目标价 | `~/Library/Application Support/OneBox/StockWatch/marketsprite.sqlite` |
-| 刷新间隔、牛叫开关、熊吼开关 | OneBox `UserDefaults` 中的 `onebox.stockWatch.*` 键 |
+| 刷新间隔、牛叫开关、熊吼开关、已解析的公开美股 provider 标识 | OneBox `UserDefaults` 中的 `onebox.stockWatch.*` 键 |
 | 数据库、刷新和批量应用耗时 | macOS Unified Logging signpost；只记录固定区间名，不记录代码、搜索词、URL 查询或绝对用户路径 |
 
 行情缓存用于在请求失败或尚未刷新时显示上次成功数据。界面会把缓存、旧响应和刷新失败标为 stale 或错误；本地存在数据不代表数据仍然及时。
@@ -36,7 +36,7 @@
 
 | 端点 | 何时访问 | 发送内容 |
 | --- | --- | --- |
-| `searchapi.eastmoney.com/api/suggest/get` | 用户提交搜索；美股 fallback 需要解析 provider 标识时也可能访问 | 用户输入的名称或代码；固定 `type=14`、`count=20` 和公开 provider token |
+| `searchapi.eastmoney.com/api/suggest/get` | 用户提交搜索；美股 fallback 没有有效的本地 provider 标识，或已缓存标识失效并需要重新解析时也可能访问 | 用户输入的名称或代码；固定 `type=14`、`count=20` 和公开 provider token |
 | `web.ifzq.gtimg.cn/appstock/app/minute/query` | 每个观察标的的首选行情请求 | 单个标的的 provider `code` |
 | `push2delay.eastmoney.com/api/qt/stock/trends2/get` | 腾讯请求失败且未取消后的分时 fallback | 单个标的的 `secid`；固定 `fields1`、`fields2`、`iscr=0`、`ndays=1` |
 
@@ -48,7 +48,7 @@
 
 ## 删除数据
 
-- 只删除行情缓存：在股票看盘检查器的“数据”区选择“清空缓存”。观察列表和提醒设置会保留。
+- 只删除行情缓存：在股票看盘检查器的“数据”区选择“清空缓存”；若损坏缓存阻止启动，也可在启动失败页选择同名操作。观察列表和提醒设置会保留。
 - 删除某个标的：在检查器移除它；该标的的目标价和行情缓存会一起删除。
 - 删除全部股票看盘数据库：先退出 OneBox，再在 Finder 删除 `~/Library/Application Support/OneBox/StockWatch/`。
 - 删除股票看盘偏好：退出 OneBox 后执行：
@@ -57,6 +57,7 @@
   defaults delete com.cmy.OneBox onebox.stockWatch.refreshInterval
   defaults delete com.cmy.OneBox onebox.stockWatch.bullSoundEnabled
   defaults delete com.cmy.OneBox onebox.stockWatch.bearSoundEnabled
+  defaults delete com.cmy.OneBox onebox.stockWatch.eastMoneyIdentifiers
   ```
 
 删除 OneBox 数据不会删除独立应用的 `~/Library/Application Support/MarketSprite/` 或其偏好。如果只删除 OneBox 新库并再次打开股票看盘，因新库重新变为不存在，仍保留的独立应用旧库会再次满足导入条件；如果只删除 OneBox 偏好键，仍保留的三个旧偏好值也会再次复制。只有在不再需要独立应用及其回退数据，并且不希望重新导入时，用户才应另行移走或删除旧库和对应旧偏好。

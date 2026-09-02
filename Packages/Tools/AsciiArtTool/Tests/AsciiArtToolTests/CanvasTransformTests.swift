@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Testing
 
@@ -34,6 +35,40 @@ struct CanvasTransformTests {
         let delta = InteractiveMTKView.canvasDragDelta(deltaX: 24, deltaY: 12)
 
         #expect(delta == CGSize(width: 24, height: 12))
+    }
+
+    @Test
+    func `captured upward canvas drag preserves the AppKit y direction`() {
+        var transform = CanvasTransform()
+
+        transform.pan(
+            by: InteractiveMTKView.canvasDragDelta(deltaX: 0, deltaY: 20),
+            in: CGSize(width: 200, height: 100)
+        )
+
+        #expect(transform.offset.y == 0.2)
+    }
+
+    @Test
+    func `rendering stops for minimized and fully occluded windows`() {
+        #expect(
+            !InteractiveMTKView.shouldRender(
+                isMiniaturized: true,
+                occlusionState: .visible
+            )
+        )
+        #expect(
+            !InteractiveMTKView.shouldRender(
+                isMiniaturized: false,
+                occlusionState: []
+            )
+        )
+        #expect(
+            InteractiveMTKView.shouldRender(
+                isMiniaturized: false,
+                occlusionState: .visible
+            )
+        )
     }
 
     @Test

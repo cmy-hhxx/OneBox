@@ -40,14 +40,15 @@ final class MediaMaterializerTests: XCTestCase {
         XCTAssertFalse(calls[0].arguments.contains("aac"))
     }
 
-    func testMaterializerAcceptsFiresideMediaRedirect() async throws {
+    func testMaterializerAcceptsApprovedCrossHostHTTPSRedirect() async throws {
         let destination = FileManager.default.temporaryDirectory
             .appending(
                 path: "MediaMaterializerTests-\(UUID().uuidString)", directoryHint: .isDirectory)
         defer { try? FileManager.default.removeItem(at: destination) }
         let sourceURL = URL(string: "https://aphid.fireside.fm/d/episode.mp3")!
         let redirectedURL = URL(
-            string: "https://media24.fireside.fm/file/fireside-audio/episode.mp3")!
+            string: "https://media24.fireside.fm/file/fireside-audio/episode.mp3"
+        )!
         let materializer = MediaMaterializer(
             transport: MaterializerHTTPTransport(
                 sourceURL: sourceURL,
@@ -67,6 +68,74 @@ final class MediaMaterializerTests: XCTestCase {
         )
 
         XCTAssertEqual(result.url, destination.appending(path: "audio.m4a"))
+    }
+
+    func testMaterializerRejectsRedirectOutsideApprovedSourceFamily() async throws {
+        let destination = FileManager.default.temporaryDirectory
+            .appending(
+                path: "MediaMaterializerTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let sourceURL = URL(string: "https://aphid.fireside.fm/d/episode.mp3")!
+        let redirectedURL = URL(string: "https://cdn.example.net/audio/episode.mp3")!
+        let runner = MaterializerToolRunner()
+        let materializer = MediaMaterializer(
+            transport: MaterializerHTTPTransport(
+                sourceURL: sourceURL,
+                responseURL: redirectedURL
+            ),
+            runner: runner,
+            toolLocator: BundledToolLocator(overrides: [
+                "ffmpeg": try makeTestExecutable(named: "ffmpeg"),
+                "ffprobe": try makeTestExecutable(named: "ffprobe"),
+            ])
+        )
+
+        do {
+            _ = try await materializer.materialize(
+                stream: ResolvedAudioStream(url: sourceURL, headers: [:], duration: 42),
+                to: destination,
+                progress: { _ in }
+            )
+            XCTFail("Expected a redirect outside the source family to be rejected")
+        } catch let error as ContentImportError {
+            XCTAssertEqual(error, .mediaUnavailable("音频地址已经失效，请重新尝试。"))
+        }
+        let calls = await runner.calls
+        XCTAssertTrue(calls.isEmpty)
+    }
+
+    func testMaterializerRejectsHTTPSDowngradeRedirect() async throws {
+        let destination = FileManager.default.temporaryDirectory
+            .appending(
+                path: "MediaMaterializerTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let sourceURL = URL(string: "https://audio.example.com/episode.mp3")!
+        let redirectedURL = URL(string: "http://cdn.example.net/audio/episode.mp3")!
+        let runner = MaterializerToolRunner()
+        let materializer = MediaMaterializer(
+            transport: MaterializerHTTPTransport(
+                sourceURL: sourceURL,
+                responseURL: redirectedURL
+            ),
+            runner: runner,
+            toolLocator: BundledToolLocator(overrides: [
+                "ffmpeg": try makeTestExecutable(named: "ffmpeg"),
+                "ffprobe": try makeTestExecutable(named: "ffprobe"),
+            ])
+        )
+
+        do {
+            _ = try await materializer.materialize(
+                stream: ResolvedAudioStream(url: sourceURL, headers: [:], duration: 42),
+                to: destination,
+                progress: { _ in }
+            )
+            XCTFail("Expected an HTTPS downgrade to be rejected")
+        } catch let error as ContentImportError {
+            XCTAssertEqual(error, .mediaUnavailable("音频地址已经失效，请重新尝试。"))
+        }
+        let calls = await runner.calls
+        XCTAssertTrue(calls.isEmpty)
     }
 
     func testMaterializerTranscodesWhenStreamCopyCannotProduceM4A() async throws {

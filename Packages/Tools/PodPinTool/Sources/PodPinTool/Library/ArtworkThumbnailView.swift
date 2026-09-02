@@ -8,6 +8,7 @@ struct ArtworkThumbnailView: View {
     let url: URL?
     let maxPixelSize: Int
     @State private var image: NSImage?
+    @State private var timeoutTaskOwner = CooperativeTaskOwner()
 
     @Environment(\.designPalette) private var palette
 
@@ -32,7 +33,10 @@ struct ArtworkThumbnailView: View {
         .task(id: ArtworkCacheKey(url: url, maxPixelSize: maxPixelSize)) {
             image = nil
             guard let url else { return }
-            let result = await withCooperativeTimeout(.seconds(2)) {
+            let result = await withCooperativeTimeout(
+                .seconds(2),
+                owner: timeoutTaskOwner
+            ) {
                 await ArtworkThumbnailDecoder.thumbnail(
                     at: url,
                     maxPixelSize: maxPixelSize
@@ -40,6 +44,9 @@ struct ArtworkThumbnailView: View {
             }
             guard !Task.isCancelled, case .value(let thumbnail) = result else { return }
             image = thumbnail?.image
+        }
+        .onDisappear {
+            timeoutTaskOwner.cancelAll()
         }
     }
 }

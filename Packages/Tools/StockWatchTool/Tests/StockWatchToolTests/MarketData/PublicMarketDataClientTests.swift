@@ -189,6 +189,142 @@ final class PublicMarketDataClientTests: XCTestCase {
         )
     }
 
+    func testUSQuoteIdentifierPersistsAcrossClientSessions() async throws {
+        let suiteName = "PublicMarketDataIdentifierTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let requestedHosts = OSAllocatedUnfairLock<[String]>(initialState: [])
+        StubURLProtocol.handler = { request in
+            let host = request.url?.host ?? "nil"
+            requestedHosts.withLock { $0.append(host) }
+            switch host {
+            case "searchapi.eastmoney.com":
+                return Self.response(
+                    for: request,
+                    json: """
+                        {
+                          "QuotationCodeTable": {
+                            "Data": [
+                              {"Code":"AAPL","Name":"苹果","Classify":"UsStock","SecurityType":"20","MktNum":"105","QuoteID":"105.AAPL"}
+                            ],
+                            "Status": 0,
+                            "Message": "OK"
+                          }
+                        }
+                        """
+                )
+            case "web.ifzq.gtimg.cn":
+                return Self.response(for: request, json: "{}", statusCode: 503)
+            case "push2delay.eastmoney.com":
+                return Self.response(
+                    for: request,
+                    json: """
+                        {
+                          "rc": 0,
+                          "data": {
+                            "code": "AAPL",
+                            "market": 105,
+                            "preClose": 208.50,
+                            "trends": [
+                              "2026-07-30 21:30,209.00,209.20,209.30,208.90,1,1,1",
+                              "2026-07-30 21:31,209.20,210.00,210.10,209.10,1,1,1"
+                            ]
+                          }
+                        }
+                        """
+                )
+            default:
+                XCTFail("Unexpected host: \(host)")
+                return Self.response(for: request, json: "{}", statusCode: 500)
+            }
+        }
+        let instrument = Instrument.initialWatchlist[2]
+        let searchClient = PublicMarketDataClient(
+            session: makeSession(),
+            identifierStore: EastMoneyIdentifierStore(defaults: defaults)
+        )
+
+        _ = try await searchClient.searchInstruments(matching: instrument.symbol)
+
+        let restoredClient = PublicMarketDataClient(
+            session: makeSession(),
+            identifierStore: EastMoneyIdentifierStore(defaults: defaults)
+        )
+        let quote = try await restoredClient.fetchQuote(for: instrument)
+        let hosts = requestedHosts.withLock { $0 }
+
+        XCTAssertEqual(quote.source, .eastMoney)
+        XCTAssertEqual(hosts.filter { $0 == "searchapi.eastmoney.com" }.count, 1)
+        XCTAssertEqual(hosts.last, "push2delay.eastmoney.com")
+    }
+
+    func testStalePersistedUSIdentifierIsResolvedAgainAndReplaced() async throws {
+        let requestedIdentifiers = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let identifierStore = EastMoneyIdentifierStore(defaults: nil)
+        let instrument = Instrument.initialWatchlist[2]
+        identifierStore.setIdentifier("105.\(instrument.symbol)", for: instrument.id)
+        StubURLProtocol.handler = { request in
+            switch request.url?.host {
+            case "web.ifzq.gtimg.cn":
+                return Self.response(for: request, json: "{}", statusCode: 503)
+            case "searchapi.eastmoney.com":
+                return Self.response(
+                    for: request,
+                    json: """
+                        {
+                          "QuotationCodeTable": {
+                            "Data": [
+                              {"Code":"AAPL","Name":"苹果","Classify":"UsStock","SecurityType":"20","MktNum":"106","QuoteID":"106.AAPL"}
+                            ],
+                            "Status": 0,
+                            "Message": "OK"
+                          }
+                        }
+                        """
+                )
+            case "push2delay.eastmoney.com":
+                let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+                let identifier =
+                    components?.queryItems?.first(where: { $0.name == "secid" })?.value
+                    ?? ""
+                requestedIdentifiers.withLock { $0.append(identifier) }
+                guard identifier == "106.AAPL" else {
+                    return Self.response(for: request, json: #"{"rc":-1,"data":null}"#)
+                }
+                return Self.response(
+                    for: request,
+                    json: """
+                        {
+                          "rc": 0,
+                          "data": {
+                            "code": "AAPL",
+                            "market": 106,
+                            "preClose": 208.50,
+                            "trends": [
+                              "2026-07-30 21:30,209.00,209.20,209.30,208.90,1,1,1",
+                              "2026-07-30 21:31,209.20,210.00,210.10,209.10,1,1,1"
+                            ]
+                          }
+                        }
+                        """
+                )
+            default:
+                XCTFail("Unexpected host: \(request.url?.host ?? "nil")")
+                return Self.response(for: request, json: "{}", statusCode: 500)
+            }
+        }
+        let client = PublicMarketDataClient(
+            session: makeSession(),
+            identifierStore: identifierStore
+        )
+
+        let quote = try await client.fetchQuote(for: instrument)
+
+        XCTAssertEqual(quote.source, .eastMoney)
+        XCTAssertEqual(requestedIdentifiers.withLock { $0 }, ["105.AAPL", "106.AAPL"])
+        XCTAssertEqual(identifierStore.identifier(for: instrument.id), "106.AAPL")
+    }
+
     func testInvalidTencentCandidateFallsBackToValidEastMoney() async throws {
         StubURLProtocol.handler = { request in
             switch request.url?.host {

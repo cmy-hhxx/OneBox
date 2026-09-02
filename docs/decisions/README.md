@@ -12,6 +12,7 @@
 | [ADR-0008](0008-own-work-with-visible-tool-lifecycle.md) | 由可见工具拥有股票看盘工作生命周期 | Accepted |
 | [ADR-0009](0009-use-onebox-grdb-database-and-one-time-import.md) | 使用 OneBox 命名空间的 GRDB 数据库并一次性导入独立应用数据 | Accepted |
 | [ADR-0010](0010-require-package-per-tool-isolation.md) | 每个工具使用独立本地 Swift package | Accepted |
+| [ADR-0011](0011-cache-public-market-provider-identifiers-in-preferences.md) | 在偏好中缓存公开行情 provider 标识 | Accepted |
 
 - `Proposed`：仍在讨论，不是当前约束。
 - `Accepted`：当前实现必须遵守。

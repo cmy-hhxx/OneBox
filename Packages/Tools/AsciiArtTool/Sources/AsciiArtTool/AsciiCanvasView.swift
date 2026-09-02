@@ -16,8 +16,13 @@ struct AsciiCanvasView: View {
                 .aspectRatio(session.settings.canvasPreset.outputSize, contentMode: .fit)
                 .overlay(alignment: .top) {
                     if let statusMessage = session.statusMessage {
-                        AsciiStatusBanner(message: statusMessage)
-                            .padding(DesignMetrics.space12)
+                        AsciiStatusBanner(
+                            message: statusMessage,
+                            retry: session.statusError == .metalUnavailable
+                                ? { session.retryMetalPreparation() }
+                                : nil
+                        )
+                        .padding(DesignMetrics.space12)
                     }
                 }
                 .overlay {
@@ -53,9 +58,12 @@ struct AsciiCanvasView: View {
                 sourceRevision: session.sourceRevision,
                 snapshot: session.renderSnapshot,
                 isAnimating: session.isAnimationActive,
+                allowsTransientWork: session.allowsTransientWork,
+                retryRevision: session.metalRetryRevision,
                 onPan: pan,
                 onZoom: zoom,
                 onReset: { session.transform.reset() },
+                onWindowVisibilityChanged: session.setWindowVisible,
                 onReadinessChanged: session.setMetalReady
             )
             .focusable()

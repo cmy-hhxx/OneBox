@@ -45,7 +45,10 @@ actor MediaMaterializer: MediaMaterializing {
         for (name, value) in stream.headers {
             request.setValue(value, forHTTPHeaderField: name)
         }
-        let response = try await transport.download(for: request) { downloadProgress in
+        let response = try await transport.download(
+            for: request,
+            redirectValidator: Self.acceptsRedirect
+        ) { downloadProgress in
             progress(downloadProgress.scaled(to: 0.9))
         }
         defer { try? fileManager.removeItem(at: response.temporaryURL) }
@@ -136,7 +139,8 @@ actor MediaMaterializer: MediaMaterializing {
     }
 
     private static func acceptsRedirect(from original: URL, to final: URL) -> Bool {
-        guard original.scheme == "https", final.scheme == "https",
+        guard original.scheme?.lowercased() == "https",
+            final.scheme?.lowercased() == "https",
             let originalHost = original.host?.lowercased(),
             let finalHost = final.host?.lowercased()
         else { return false }

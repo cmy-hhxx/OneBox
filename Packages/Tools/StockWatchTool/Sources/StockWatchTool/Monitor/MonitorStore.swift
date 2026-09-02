@@ -168,7 +168,12 @@ final class MonitorStore: ObservableObject {
         do {
             let instruments = try await database.loadWatchlist()
             try Task.checkCancellation()
-            let cachedQuotes = try await database.loadLatestQuotes(for: instruments)
+            let cachedQuotes: [InstrumentID: QuoteSnapshot]
+            do {
+                cachedQuotes = try await database.loadLatestQuotes(for: instruments)
+            } catch {
+                throw StockWatchStartupError.quoteCacheUnavailable
+            }
             try Task.checkCancellation()
             let loadedAlertSettings = try await database.loadAlertSettings()
             try Task.checkCancellation()

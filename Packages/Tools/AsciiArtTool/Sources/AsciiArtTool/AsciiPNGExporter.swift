@@ -1,7 +1,7 @@
 @preconcurrency import Metal
 
-@MainActor
 enum AsciiPNGExporter {
+    @MainActor
     static func render(
         cache: AsciiRenderCache,
         source: AsciiSource,
@@ -9,6 +9,20 @@ enum AsciiPNGExporter {
     ) async throws -> Data {
         try Task.checkCancellation()
         let pipeline = try await cache.preparedPipeline()
+        try Task.checkCancellation()
+        return try await renderPrepared(
+            pipeline: pipeline,
+            source: source,
+            snapshot: snapshot
+        )
+    }
+
+    @concurrent
+    private static func renderPrepared(
+        pipeline: AsciiMetalPipeline,
+        source: AsciiSource,
+        snapshot: AsciiRenderSnapshot
+    ) async throws -> Data {
         try Task.checkCancellation()
         let sourceTexture = try pipeline.makeTexture(from: source.image)
         let glyphTexture = try GlyphAtlas.makeTexture(
@@ -54,16 +68,83 @@ enum AsciiPNGExporter {
 
 extension MTLCommandBuffer {
     fileprivate func commitAndWait() async throws {
+        let waiter = MTLCommandBufferWaiter(commandBuffer: self)
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await waiter.wait()
+        } onCancel: {
+            waiter.cancel()
+        }
+    }
+}
+
+private final class MTLCommandBufferWaiter: @unchecked Sendable {
+    private let commandBuffer: MTLCommandBuffer
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var isResolved = false
+    private var isCancelled = false
+
+    init(commandBuffer: MTLCommandBuffer) {
+        self.commandBuffer = commandBuffer
+    }
+
+    func wait() async throws {
         try await withCheckedThrowingContinuation {
             (continuation: CheckedContinuation<Void, Error>) in
-            addCompletedHandler { commandBuffer in
-                if let error = commandBuffer.error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
+            lock.lock()
+            guard !isResolved else {
+                lock.unlock()
+                continuation.resume(throwing: CancellationError())
+                return
             }
-            commit()
+            if isCancelled {
+                isResolved = true
+                lock.unlock()
+                continuation.resume(throwing: CancellationError())
+                return
+            }
+            self.continuation = continuation
+            lock.unlock()
+
+            commandBuffer.addCompletedHandler { [weak self] commandBuffer in
+                self?.complete(with: commandBuffer.error)
+            }
+
+            lock.lock()
+            let shouldCancel = isCancelled
+            lock.unlock()
+            if shouldCancel {
+                complete(with: CancellationError())
+            } else {
+                commandBuffer.commit()
+            }
         }
+    }
+
+    func cancel() {
+        lock.lock()
+        isCancelled = true
+        let continuation = self.continuation
+        self.continuation = nil
+        let shouldCancel = !isResolved
+        isResolved = true
+        lock.unlock()
+
+        guard shouldCancel else { return }
+        continuation?.resume(throwing: CancellationError())
+    }
+
+    private func complete(with error: Error?) {
+        lock.lock()
+        guard !isResolved else {
+            lock.unlock()
+            return
+        }
+        isResolved = true
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(with: error.map(Result.failure) ?? .success(()))
     }
 }

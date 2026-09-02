@@ -1,55 +1,58 @@
-import AppKit
+import CoreGraphics
+import CoreText
+import Foundation
 import MetalKit
 
-@MainActor
 enum GlyphAtlas {
     static func makeTexture(glyphs: String, device: MTLDevice) throws -> MTLTexture {
         let characters = Array(glyphs)
         let cellSize = 64
         let pixelWidth = max(characters.count, 1) * cellSize
         guard
-            let bitmap = NSBitmapImageRep(
-                bitmapDataPlanes: nil,
-                pixelsWide: pixelWidth,
-                pixelsHigh: cellSize,
-                bitsPerSample: 8,
-                samplesPerPixel: 4,
-                hasAlpha: true,
-                isPlanar: false,
-                colorSpaceName: .deviceRGB,
+            let context = CGContext(
+                data: nil,
+                width: pixelWidth,
+                height: cellSize,
+                bitsPerComponent: 8,
                 bytesPerRow: 0,
-                bitsPerPixel: 0
-            ),
-            let context = NSGraphicsContext(bitmapImageRep: bitmap)
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
         else {
             throw AsciiToolError.metalUnavailable
         }
 
-        bitmap.size = NSSize(width: pixelWidth, height: cellSize)
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = context
-        NSColor.clear.setFill()
-        NSRect(x: 0, y: 0, width: pixelWidth, height: cellSize).fill()
-
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 46, weight: .bold),
-            .foregroundColor: NSColor.white,
+        context.clear(CGRect(x: 0, y: 0, width: pixelWidth, height: cellSize))
+        context.textMatrix = .identity
+        guard let font = CTFontCreateUIFontForLanguage(.userFixedPitch, 46, nil) else {
+            throw AsciiToolError.metalUnavailable
+        }
+        let attributes: [CFString: Any] = [
+            kCTFontAttributeName: font,
+            kCTForegroundColorAttributeName: CGColor(gray: 1, alpha: 1),
         ]
         for (index, character) in characters.enumerated() {
-            let string = String(character) as NSString
-            let size = string.size(withAttributes: attributes)
-            let rect = NSRect(
-                x: Double(index * cellSize) + (Double(cellSize) - size.width) / 2,
-                y: (Double(cellSize) - size.height) / 2,
-                width: size.width,
-                height: size.height
+            guard
+                let attributedString = CFAttributedStringCreate(
+                    nil,
+                    String(character) as CFString,
+                    attributes as CFDictionary
+                )
+            else {
+                throw AsciiToolError.metalUnavailable
+            }
+            let line = CTLineCreateWithAttributedString(attributedString)
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            let width = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+            context.textPosition = CGPoint(
+                x: Double(index * cellSize) + (Double(cellSize) - width) / 2,
+                y: (Double(cellSize) - ascent - descent) / 2 + descent
             )
-            string.draw(in: rect, withAttributes: attributes)
+            CTLineDraw(line, context)
         }
-        context.flushGraphics()
-        NSGraphicsContext.restoreGraphicsState()
 
-        guard let image = bitmap.cgImage else {
+        guard let image = context.makeImage() else {
             throw AsciiToolError.metalUnavailable
         }
         return try MTKTextureLoader(device: device).newTexture(

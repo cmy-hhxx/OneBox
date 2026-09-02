@@ -13,6 +13,7 @@ struct AsciiArtView: View {
     @State private var isExporterPresented = false
     @State private var exportDocument = PNGDocument()
     @State private var exportTask: Task<Void, Never>?
+    @State private var transientResumeTask: Task<Void, Never>?
     @State private var focusRestorationTask: Task<Void, Never>?
     @State private var isExporting = false
     @AccessibilityFocusState private var isParameterButtonFocused: Bool
@@ -57,7 +58,7 @@ struct AsciiArtView: View {
             session.setReduceMotion(value)
         }
         .onChange(of: scenePhase) { _, phase in
-            session.setWindowActive(phase == .active)
+            session.setSceneActive(phase == .active)
         }
         .onExitCommand(perform: closeInspector)
     }
@@ -65,13 +66,20 @@ struct AsciiArtView: View {
     private func appear() {
         session.prepareInitialSource()
         session.setReduceMotion(reduceMotion)
-        session.setWindowActive(scenePhase == .active)
+        session.setSceneActive(scenePhase == .active)
         session.setVisible(true)
+        transientResumeTask?.cancel()
+        transientResumeTask = Task { @MainActor in
+            await session.resumeTransientTasks()
+            transientResumeTask = nil
+        }
     }
 
     private func disappear() {
         session.setVisible(false)
         session.cancelTransientTasks()
+        transientResumeTask?.cancel()
+        transientResumeTask = nil
         exportTask?.cancel()
         exportTask = nil
         focusRestorationTask?.cancel()
@@ -106,7 +114,8 @@ struct AsciiArtView: View {
         exportTask = Task { @MainActor in
             do {
                 let data = try await AsciiAsyncDeadline.run(
-                    for: AsciiAsyncDeadline.pngExport
+                    for: AsciiAsyncDeadline.pngExport,
+                    owner: session.asyncWorkOwner
                 ) {
                     try await AsciiPNGExporter.render(
                         cache: renderCache,

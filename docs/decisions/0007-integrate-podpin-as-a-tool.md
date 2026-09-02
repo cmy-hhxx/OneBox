@@ -47,8 +47,11 @@ module。需要明确后台生命周期、数据位置和媒体工具发行方�
   原浮动播放器的核心控制改成 OneBox 内常驻的紧凑播放条。
 - 继续使用 `~/Library/Application Support/PodPin/` 作为 PodPin 工具拥有的数据
   namespace。数据库只保存该目录内的相对媒体路径，因此零复制保留现有资料库、队列、
-  进度与媒体。偏好继续读取 `io.github.cmy-hhxx.podpin` suite。OneBox 不解析这些数据，
-  同时运行独立 PodPin 与 OneBox PodPin 工具不在支持范围内，且迁移不得删除旧数据。
+  进度与媒体。偏好继续读取 `io.github.cmy-hhxx.podpin` suite，并沿用独立版已经写入的
+  `podpin.nowPlayingContentOpacity`、`podpin.playbackRate`、`podpin.playbackVolume` 和
+  `podpin.lastLibraryCollection` 四个键；package 测试用这些精确键验证可直接恢复，无需另做
+  映射。OneBox 不解析这些数据，同时运行独立 PodPin 与 OneBox PodPin 工具不在支持范围内，
+  且迁移不得删除旧数据。
 - OneBox 继续保持非 App Sandbox 和 Hardened Runtime。应用启动本身不联网；网络只由
   用户发起的导入、在线播放、下载或重试触发。浏览器 Profile 只在类型化反滥用挑战和
   用户明确选择后读取，临时 Cookie、header 和媒体 URL 不写入业务存储或日志。

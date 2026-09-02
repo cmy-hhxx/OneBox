@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 nonisolated enum AsciiImageDecoder {
     static let maximumFileSize = 50 * 1024 * 1024
     static let maximumPixelDimension = 4096
+    static let maximumSourcePixelDimension = 16_384
+    static let maximumSourcePixelCount = 64 * 1024 * 1024
     private static let supportedExtensions = ["png", "jpg", "jpeg", "jpe", "svg"]
     private static let supportedRasterTypes = [UTType.png.identifier, UTType.jpeg.identifier]
 
@@ -66,6 +68,7 @@ nonisolated enum AsciiImageDecoder {
         guard CGImageSourceGetCount(source) == 1 else {
             throw AsciiToolError.unsupportedFormat
         }
+        try validateDeclaredRasterDimensions(source)
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -77,6 +80,43 @@ nonisolated enum AsciiImageDecoder {
             throw AsciiToolError.decodeFailed
         }
         return image
+    }
+
+    private static func validateDeclaredRasterDimensions(_ source: CGImageSource) throws {
+        guard
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
+                as? [CFString: Any],
+            let width = declaredDimension(properties[kCGImagePropertyPixelWidth]),
+            let height = declaredDimension(properties[kCGImagePropertyPixelHeight])
+        else {
+            throw AsciiToolError.decodeFailed
+        }
+        try validateDeclaredRasterDimensions(width: width, height: height)
+    }
+
+    static func validateDeclaredRasterDimensions(width: Int, height: Int) throws {
+        guard width > 0, height > 0 else {
+            throw AsciiToolError.decodeFailed
+        }
+        guard width <= maximumSourcePixelDimension,
+            height <= maximumSourcePixelDimension,
+            width <= maximumSourcePixelCount / height
+        else {
+            throw AsciiToolError.imageDimensionsTooLarge
+        }
+    }
+
+    private static func declaredDimension(_ value: Any?) -> Int? {
+        guard let number = value as? NSNumber else { return nil }
+        let dimension = number.doubleValue
+        guard dimension.isFinite,
+            dimension.rounded() == dimension,
+            dimension > 0,
+            dimension <= Double(Int.max)
+        else {
+            return nil
+        }
+        return Int(dimension)
     }
 
     private static func decodeSVG(_ data: Data) throws -> CGImage {

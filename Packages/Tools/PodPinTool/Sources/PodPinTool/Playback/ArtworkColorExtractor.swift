@@ -17,6 +17,7 @@ final class ArtworkColorModel: ObservableObject {
     @Published private(set) var color: Color?
 
     private var task: Task<Void, Never>?
+    private let timeoutTaskOwner = CooperativeTaskOwner()
     private static let cache = NSCache<NSURL, ArtworkColorBox>()
 
     func load(from url: URL?) {
@@ -29,8 +30,12 @@ final class ArtworkColorModel: ObservableObject {
             color = cached.value.artworkAccentColor
             return
         }
+        let timeoutTaskOwner = timeoutTaskOwner
         task = Task { [weak self] in
-            let result = await withCooperativeTimeout(.seconds(2)) {
+            let result = await withCooperativeTimeout(
+                .seconds(2),
+                owner: timeoutTaskOwner
+            ) {
                 await ArtworkColorExtractor.sample(at: url)
             }
             guard !Task.isCancelled, case .value(let sample?) = result else { return }
@@ -42,9 +47,13 @@ final class ArtworkColorModel: ObservableObject {
     func cancel() {
         task?.cancel()
         task = nil
+        timeoutTaskOwner.cancelAll()
     }
 
-    deinit { task?.cancel() }
+    deinit {
+        task?.cancel()
+        timeoutTaskOwner.cancelAll()
+    }
 }
 
 private final class ArtworkColorBox: @unchecked Sendable {

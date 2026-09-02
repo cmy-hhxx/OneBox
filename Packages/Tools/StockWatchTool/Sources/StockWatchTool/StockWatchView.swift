@@ -10,6 +10,7 @@ struct StockWatchView: View {
 
     @Environment(\.designPalette) private var palette
     @State private var startupPathActionMessage: String?
+    @State private var isClearCacheConfirmationPresented = false
 
     init(
         platform: any StockWatchPlatformClient,
@@ -55,6 +56,11 @@ struct StockWatchView: View {
             Text("正在打开本地行情数据…")
                 .font(DesignTypography.body)
                 .foregroundStyle(palette.textSecondary)
+            if let message = bootstrap.quoteCacheRecoveryMessage {
+                Text(message)
+                    .font(DesignTypography.metadata)
+                    .foregroundStyle(palette.positive)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
@@ -86,11 +92,33 @@ struct StockWatchView: View {
                 .buttonStyle(.bordered)
             }
 
-            if let startupPathActionMessage {
-                Text(startupPathActionMessage)
+            if failure.canClearQuoteCache {
+                Button("清空行情缓存…", systemImage: "trash", role: .destructive) {
+                    isClearCacheConfirmationPresented = true
+                }
+                .buttonStyle(.bordered)
+                .disabled(bootstrap.isClearingQuoteCache)
+                .confirmationDialog(
+                    "清空全部行情缓存？",
+                    isPresented: $isClearCacheConfirmationPresented,
+                    titleVisibility: .visible
+                ) {
+                    Button(
+                        "清空行情缓存",
+                        role: .destructive,
+                        action: bootstrap.requestQuoteCacheClear
+                    )
+                    Button("取消", role: .cancel) {}
+                } message: {
+                    Text("只删除行情缓存；观察列表与提醒设置会保留。")
+                }
+            }
+
+            if let message = bootstrap.quoteCacheRecoveryMessage ?? startupPathActionMessage {
+                Text(message)
                     .font(DesignTypography.metadata)
                     .foregroundStyle(
-                        startupPathActionMessage.hasPrefix("已")
+                        message.hasPrefix("已") || message.hasPrefix("行情缓存已")
                             ? palette.positive
                             : palette.negative
                     )

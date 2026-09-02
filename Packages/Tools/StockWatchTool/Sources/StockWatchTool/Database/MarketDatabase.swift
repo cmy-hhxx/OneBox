@@ -27,6 +27,10 @@ actor MarketDatabase {
                 databaseQueue,
                 cancellationToken: cancellationToken
             )
+            try Self.normalizeWatchlistPositions(
+                in: databaseQueue,
+                cancellationToken: cancellationToken
+            )
         } else {
             try DatabaseSchema.validate(
                 databaseQueue,
@@ -262,6 +266,17 @@ actor MarketDatabase {
     }
 
     func loadLatestQuotes(for instruments: [Instrument]) throws -> [InstrumentID: QuoteSnapshot] {
+        try loadLatestQuotes(for: instruments, omittingInvalidRows: true)
+    }
+
+    func validateLatestQuotes(for instruments: [Instrument]) throws {
+        _ = try loadLatestQuotes(for: instruments, omittingInvalidRows: false)
+    }
+
+    private func loadLatestQuotes(
+        for instruments: [Instrument],
+        omittingInvalidRows: Bool
+    ) throws -> [InstrumentID: QuoteSnapshot] {
         guard !instruments.isEmpty else { return [:] }
 
         return try databaseQueue.read { database in
@@ -315,29 +330,33 @@ actor MarketDatabase {
 
                 var snapshots: [InstrumentID: QuoteSnapshot] = [:]
                 for session in sessions {
-                    let rawID: String = session["instrument_id"]
-                    guard let instrument = instrumentByRawID[rawID] else { continue }
-                    let instrumentID = instrument.id
-                    let source: QuoteSource = try Self.quoteSource(from: session["source"])
-                    let quotedAt: Int64 = session["quoted_at_ms"]
-                    let receivedAt: Int64 = session["received_at_ms"]
-                    let snapshot = QuoteSnapshot(
-                        instrumentID: instrumentID,
-                        minuteBars: barsByInstrumentID[instrumentID] ?? [],
-                        dayOpen: session["day_open"],
-                        previousClose: session["previous_close"],
-                        lastPrice: session["last_price"],
-                        marketTime: Self.date(fromMilliseconds: quotedAt),
-                        receivedAt: Self.date(fromMilliseconds: receivedAt),
-                        source: source
-                    )
-                    let storedSessionDate: String = session["session_date"]
-                    try Self.validateStoredSessionDate(
-                        storedSessionDate,
-                        for: snapshot,
-                        instrument: instrument
-                    )
-                    snapshots[instrumentID] = snapshot
+                    do {
+                        let rawID: String = session["instrument_id"]
+                        guard let instrument = instrumentByRawID[rawID] else { continue }
+                        let instrumentID = instrument.id
+                        let source: QuoteSource = try Self.quoteSource(from: session["source"])
+                        let quotedAt: Int64 = session["quoted_at_ms"]
+                        let receivedAt: Int64 = session["received_at_ms"]
+                        let snapshot = QuoteSnapshot(
+                            instrumentID: instrumentID,
+                            minuteBars: barsByInstrumentID[instrumentID] ?? [],
+                            dayOpen: session["day_open"],
+                            previousClose: session["previous_close"],
+                            lastPrice: session["last_price"],
+                            marketTime: Self.date(fromMilliseconds: quotedAt),
+                            receivedAt: Self.date(fromMilliseconds: receivedAt),
+                            source: source
+                        )
+                        let storedSessionDate: String = session["session_date"]
+                        try Self.validateStoredSessionDate(
+                            storedSessionDate,
+                            for: snapshot,
+                            instrument: instrument
+                        )
+                        snapshots[instrumentID] = snapshot
+                    } catch  where omittingInvalidRows {
+                        continue
+                    }
                 }
                 return snapshots
             }
@@ -352,7 +371,12 @@ actor MarketDatabase {
 
     func clearQuotes() throws {
         try databaseQueue.write { database in
-            try database.execute(sql: "DELETE FROM quote_cache")
+            try DatabaseSchema.withCancellationProgressHandler(
+                in: database,
+                cancellationToken: cancellationToken
+            ) {
+                try database.execute(sql: "DELETE FROM quote_cache")
+            }
         }
     }
 
@@ -529,7 +553,8 @@ actor MarketDatabase {
                 FROM watchlist ORDER BY position
                 """
         )
-        return try rows.enumerated().map { index, row in
+        var previousPosition: Int?
+        return try rows.map { row in
             let storedID: String = row["instrument_id"]
             let namespaceValue: String = row["namespace"]
             guard let namespace = SymbolNamespace(rawValue: namespaceValue) else {
@@ -547,8 +572,50 @@ actor MarketDatabase {
                 )
             }
             let position: Int = row["position"]
-            guard position == index else { throw MarketDatabaseError.invalidWatchlist }
+            guard position >= 0,
+                previousPosition.map({ position > $0 }) ?? true
+            else {
+                throw MarketDatabaseError.invalidWatchlist
+            }
+            previousPosition = position
             return instrument
+        }
+    }
+
+    private static func normalizeWatchlistPositions(
+        in writer: any DatabaseWriter,
+        cancellationToken: DatabaseCancellationToken?
+    ) throws {
+        try writer.write { database in
+            try DatabaseSchema.withCancellationProgressHandler(
+                in: database,
+                cancellationToken: cancellationToken
+            ) {
+                let rows = try Row.fetchAll(
+                    database,
+                    sql: "SELECT instrument_id, position FROM watchlist ORDER BY position"
+                )
+                let positions = rows.map { row -> Int in row["position"] }
+                guard positions != Array(positions.indices) else { return }
+                guard let maximumPosition = positions.max(),
+                    maximumPosition <= Int.max - rows.count - 1
+                else {
+                    throw MarketDatabaseError.invalidWatchlist
+                }
+
+                let offset = maximumPosition + rows.count + 1
+                try database.execute(
+                    sql: "UPDATE watchlist SET position = position + ?",
+                    arguments: [offset]
+                )
+                for (position, row) in rows.enumerated() {
+                    let instrumentID: String = row["instrument_id"]
+                    try database.execute(
+                        sql: "UPDATE watchlist SET position = ? WHERE instrument_id = ?",
+                        arguments: [position, instrumentID]
+                    )
+                }
+            }
         }
     }
 
