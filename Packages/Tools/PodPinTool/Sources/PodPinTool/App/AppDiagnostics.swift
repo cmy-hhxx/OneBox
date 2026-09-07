@@ -126,7 +126,7 @@ struct DiagnosticEvent: Sendable {
 actor AppDiagnostics {
     static let shared = AppDiagnostics()
 
-    private static let subsystem = "com.cmy.OneBox.podpin"
+    private static let subsystem = "com.cmy.OneBox"
     private static let allowedCategories: Set<String> = [
         "app", "database", "library", "playback", "storage",
     ]
@@ -138,7 +138,11 @@ actor AppDiagnostics {
         "folder.create.started",
         "folder.delete.check.failed",
         "interrupted-download.cleanup.failed",
+        "interrupted-download.marker-restore.failed",
+        "interrupted-download.recovery.failed",
         "item.delete-media.cleanup.failed",
+        "current-item.media-repair.failed",
+        "current-item.queue-repair.failed",
         "operation.failed",
         "page.load-more.failed",
         "queue.consume-after-ready.failed",
@@ -169,9 +173,9 @@ actor AppDiagnostics {
     }
 
     private func writeToUnifiedLog(_ diagnostic: DiagnosticEvent) {
-        let logger = Logger(subsystem: Self.subsystem, category: diagnostic.category)
+        let logger = Logger(subsystem: Self.subsystem, category: "PodPin")
         let message =
-            "\(diagnostic.event) operation=\(diagnostic.operationID?.uuidString ?? "") error=\(diagnostic.errorCode?.rawValue ?? "") errorID=\(diagnostic.errorID?.uuidString ?? "")"
+            "component=\(diagnostic.category) event=\(diagnostic.event) operation=\(diagnostic.operationID?.uuidString ?? "") error=\(diagnostic.errorCode?.rawValue ?? "") errorID=\(diagnostic.errorID?.uuidString ?? "")"
         switch diagnostic.level {
         case .debug: logger.debug("\(message, privacy: .public)")
         case .info: logger.info("\(message, privacy: .public)")

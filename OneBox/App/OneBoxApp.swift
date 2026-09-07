@@ -7,50 +7,53 @@ struct OneBoxApp: App {
     @NSApplicationDelegateAdaptor(OneBoxApplicationDelegate.self)
     private var applicationDelegate
 
+    private let launchPerformanceTrace = AppLaunchPerformanceTrace()
     private let catalog = AppComposition.makeCatalog()
     private let previewColorScheme: ColorScheme?
     private let forcedPreviewWindowSize: CGSize?
+    private let forcesReduceMotionForUITesting: Bool
     private let initialWidth: CGFloat
     private let initialHeight: CGFloat
 
     init() {
+        let arguments = ProcessInfo.processInfo.arguments
+        forcesReduceMotionForUITesting =
+            AppComposition.UITestingConfiguration.forcesReduceMotion(arguments: arguments)
         #if DEBUG
-            let arguments = ProcessInfo.processInfo.arguments
             previewColorScheme = arguments.contains("--ui-dark") ? .dark : nil
-            if arguments.contains("--ui-minimum") {
-                forcedPreviewWindowSize = DesignMetrics.minimumWindowSize
-            } else if arguments.contains("--ui-default") {
-                forcedPreviewWindowSize = DesignMetrics.defaultWindowSize
-            } else {
-                forcedPreviewWindowSize = nil
-            }
-            let initialSize = forcedPreviewWindowSize ?? DesignMetrics.defaultWindowSize
-            initialWidth = initialSize.width
-            initialHeight = initialSize.height
         #else
             previewColorScheme = nil
-            forcedPreviewWindowSize = nil
-            initialWidth = DesignMetrics.defaultWindowSize.width
-            initialHeight = DesignMetrics.defaultWindowSize.height
         #endif
+        forcedPreviewWindowSize = AppComposition.UITestingConfiguration.forcedWindowSize(
+            arguments: arguments
+        )
+        let initialSize = forcedPreviewWindowSize ?? DesignMetrics.defaultWindowSize
+        initialWidth = initialSize.width
+        initialHeight = initialSize.height
     }
 
     var body: some Scene {
         Window("OneBox", id: "main") {
-            HostView(catalog: catalog)
-                .onAppear {
-                    applicationDelegate.configureApplicationTermination {
-                        await catalog.prepareForApplicationTermination()
-                    }
+            HostView(
+                catalog: catalog,
+                onInitialContentReady: launchPerformanceTrace.finish
+            )
+            .onAppear {
+                applicationDelegate.configureApplicationTermination {
+                    await catalog.prepareForApplicationTermination()
                 }
-                .background {
-                    WindowAspectRatioConfigurator(
-                        aspectRatio: DesignMetrics.windowAspectRatio,
-                        minimumWindowSize: DesignMetrics.minimumWindowSize,
-                        forcedWindowSize: forcedPreviewWindowSize
-                    )
-                }
-                .preferredColorScheme(previewColorScheme ?? .light)
+            }
+            .background {
+                WindowGeometryConfigurator(
+                    minimumWindowSize: DesignMetrics.minimumWindowSize,
+                    forcedWindowSize: forcedPreviewWindowSize
+                )
+            }
+            .preferredColorScheme(previewColorScheme ?? .light)
+            .environment(
+                \.oneBoxAccessibilityReduceMotionOverride,
+                forcesReduceMotionForUITesting ? true : nil
+            )
         }
         .defaultSize(width: initialWidth, height: initialHeight)
         .windowStyle(.hiddenTitleBar)

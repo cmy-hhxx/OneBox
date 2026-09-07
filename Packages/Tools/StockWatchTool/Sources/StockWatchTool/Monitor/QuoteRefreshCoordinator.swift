@@ -22,8 +22,8 @@ struct QuoteRefreshOutcome: Sendable {
 
 actor QuoteRefreshCoordinator {
     private static let signposter = OSSignposter(
-        subsystem: "com.cmy.OneBox.StockWatch",
-        category: "QuoteRefresh"
+        subsystem: "com.cmy.OneBox",
+        category: "StockWatch"
     )
 
     private let client: any MarketDataClient

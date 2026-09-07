@@ -17,12 +17,16 @@ public enum PodPinModule {
     public static func makeRegistration(
         platform: any PodPinPlatformProviding,
         debugFixtureAudioURL: URL?,
-        externalToolsDirectoryURL: URL?
+        externalToolsDirectoryURL: URL?,
+        applicationSupportDirectoryURL: URL? = nil,
+        allowsNetworkAccess: Bool = true
     ) -> ToolRegistration {
         let session = PodPinModuleSession(
             platform: platform,
             debugFixtureAudioURL: debugFixtureAudioURL,
-            externalToolsDirectoryURL: externalToolsDirectoryURL
+            externalToolsDirectoryURL: externalToolsDirectoryURL,
+            applicationSupportDirectoryURL: applicationSupportDirectoryURL,
+            allowsNetworkAccess: allowsNetworkAccess
         )
         return ToolRegistration(
             id: ToolID(rawValue: "podpin"),
@@ -42,6 +46,8 @@ final class PodPinModuleSession {
     private let platform: any PodPinPlatformProviding
     private let debugFixtureAudioURL: URL?
     private let externalToolsDirectoryURL: URL?
+    private let applicationSupportDirectoryURL: URL?
+    private let allowsNetworkAccess: Bool
     private var lifecycle: PodPinToolLifecycle?
     private var shutdownTask: Task<Void, Never>?
 
@@ -50,11 +56,15 @@ final class PodPinModuleSession {
     init(
         platform: any PodPinPlatformProviding,
         debugFixtureAudioURL: URL?,
-        externalToolsDirectoryURL: URL?
+        externalToolsDirectoryURL: URL?,
+        applicationSupportDirectoryURL: URL? = nil,
+        allowsNetworkAccess: Bool = true
     ) {
         self.platform = platform
         self.debugFixtureAudioURL = debugFixtureAudioURL
         self.externalToolsDirectoryURL = externalToolsDirectoryURL
+        self.applicationSupportDirectoryURL = applicationSupportDirectoryURL
+        self.allowsNetworkAccess = allowsNetworkAccess
     }
 
     func contentLifecycle() -> PodPinToolLifecycle {
@@ -64,7 +74,9 @@ final class PodPinModuleSession {
         let lifecycle = PodPinToolLifecycle(
             platform: platform,
             debugFixtureAudioURL: debugFixtureAudioURL,
-            externalToolsDirectoryURL: externalToolsDirectoryURL
+            externalToolsDirectoryURL: externalToolsDirectoryURL,
+            applicationSupportDirectoryURL: applicationSupportDirectoryURL,
+            allowsNetworkAccess: allowsNetworkAccess
         )
         self.lifecycle = lifecycle
         return lifecycle

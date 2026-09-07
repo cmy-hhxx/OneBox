@@ -12,7 +12,7 @@ struct AsciiSettings: Equatable, Sendable {
         didSet { contrast = contrast.clamped(to: 0.4...2) }
     }
     var isInverted = false
-    var animation: AsciiAnimation = .wave
+    var animation: AsciiAnimation = .off
     var animationStrength: Double = 0.18 {
         didSet { animationStrength = animationStrength.clamped(to: 0...1) }
     }

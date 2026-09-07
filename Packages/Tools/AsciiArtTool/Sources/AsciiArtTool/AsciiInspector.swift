@@ -4,17 +4,14 @@ import SwiftUI
 @MainActor
 struct AsciiInspector: View {
     @Bindable var session: AsciiSession
-    let close: () -> Void
 
     @Environment(\.designPalette) private var palette
 
     var body: some View {
-        ToolInspectorPanel("参数", closeLabel: "关闭参数", close: close) {
-            VStack(alignment: .leading, spacing: DesignMetrics.space16) {
-                characterControls
-                renderControls
-                animationControls
-            }
+        VStack(alignment: .leading, spacing: DesignMetrics.space16) {
+            characterControls
+            renderControls
+            animationControls
         }
     }
 

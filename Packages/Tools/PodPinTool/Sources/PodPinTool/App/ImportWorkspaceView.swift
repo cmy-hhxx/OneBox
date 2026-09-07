@@ -9,36 +9,48 @@ struct ImportWorkspaceView: View {
     @ObservedObject var store: PodPinStore
     @ObservedObject private var importSession: ImportSession
     let entryContext: ImportEntryContext
+    let isActive: Bool
     let onImportSucceeded: @MainActor @Sendable (UUID?) -> Void
     let onRequestFolderEditor: @MainActor @Sendable (FolderEditorRequest) -> Void
     @EnvironmentObject private var navigator: AppNavigator
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.oneBoxAccessibilityReduceMotionOverride) private var reduceMotionOverride
     @Environment(\.designPalette) private var palette
 
-    @State private var shareText = ""
-    @State private var preview: ImportDiscovery?
-    @State private var selectedContentIDs = Set<String>()
-    @State private var destinationFolderID: UUID
+    @Binding private var shareText: String
+    @Binding private var preview: ImportDiscovery?
+    @Binding private var selectedContentIDs: Set<String>
+    @Binding private var destinationFolderID: UUID
     @State private var isProbing = false
     @State private var isImporting = false
-    @State private var isVisible = false
     @State private var isDestinationPickerPresented = false
     @State private var probeTask: Task<Void, Never>?
     @State private var selectedBrowserProfileID: String?
     @State private var probeGeneration = 0
     @AccessibilityFocusState private var isDestinationPickerFocused: Bool
 
+    private var reduceMotion: Bool {
+        reduceMotionOverride ?? systemReduceMotion
+    }
+
     init(
         store: PodPinStore,
         entryContext: ImportEntryContext,
+        draft: Binding<ImportDraft>,
+        isActive: Bool,
         onImportSucceeded: @escaping @MainActor @Sendable (UUID?) -> Void,
         onRequestFolderEditor: @escaping @MainActor @Sendable (FolderEditorRequest) -> Void
     ) {
         self.store = store
         self.importSession = store.importSession
         self.entryContext = entryContext
+        self.isActive = isActive
         self.onImportSucceeded = onImportSucceeded
         self.onRequestFolderEditor = onRequestFolderEditor
-        _destinationFolderID = State(initialValue: entryContext.destinationFolderID)
+        _shareText = draft.shareText
+        _preview = draft.preview
+        _selectedContentIDs = draft.selectedContentIDs
+        _destinationFolderID = draft.destinationFolderID
     }
 
     private var candidates: ImportLinkCandidates {
@@ -53,16 +65,13 @@ struct ImportWorkspaceView: View {
                 }
             }
             .onAppear {
-                isVisible = true
-                store.dismissImportIssue()
+                updateActiveState(isActive)
             }
             .onDisappear {
-                isVisible = false
-                probeTask?.cancel()
-                if importSession.verificationRequest != nil {
-                    store.cancelVerification()
-                }
-                store.discardPendingBrowserAccess()
+                suspendTransientWork()
+            }
+            .onChange(of: isActive) { _, isActive in
+                updateActiveState(isActive)
             }
             .onChange(of: importSession.browserProfiles) { _, profiles in
                 if !profiles.contains(where: { $0.id == selectedBrowserProfileID }) {
@@ -95,6 +104,7 @@ struct ImportWorkspaceView: View {
 
                     ZStack(alignment: .topLeading) {
                         TextEditor(text: $shareText)
+                            .accessibilityIdentifier("import.link-input")
                             .font(DesignTypography.body)
                             .foregroundStyle(palette.textPrimary)
                             .scrollContentBackground(.hidden)
@@ -627,9 +637,25 @@ struct ImportWorkspaceView: View {
                 preview = discovery
                 selectedContentIDs = Set(discovery.items.map(\.contentID))
             } else if importSession.verificationRequest == nil, store.userFacingError == nil {
-                navigator.showLibraryContent()
+                navigator.showLibraryContent(reduceMotion: reduceMotion)
             }
         }
+    }
+
+    private func updateActiveState(_ isActive: Bool) {
+        if isActive {
+            store.dismissImportIssue()
+        } else {
+            suspendTransientWork()
+        }
+    }
+
+    private func suspendTransientWork() {
+        probeTask?.cancel()
+        if importSession.verificationRequest != nil {
+            store.cancelVerification()
+        }
+        store.discardPendingBrowserAccess()
     }
 
     private func beginImport(as choice: PodPinStore.ImportChoice) {
@@ -644,9 +670,7 @@ struct ImportWorkspaceView: View {
             isImporting = false
             if let savedItems {
                 onImportSucceeded(savedItems.first?.id)
-                if isVisible {
-                    navigator.showLibraryContent()
-                }
+                navigator.completeImport(entryContext, reduceMotion: reduceMotion)
             }
         }
     }

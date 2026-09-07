@@ -13,8 +13,21 @@ final class WorkspacePerformanceTests: XCTestCase {
         let rows = makeRows(count: 100)
         let downloadSession = DownloadSession()
         let timeline = PlaybackTimelineSession()
+        autoreleasepool {
+            let host = NSHostingView(
+                rootView: AudioRowsBenchmarkRoot(
+                    rows: rows,
+                    downloadSession: downloadSession,
+                    timeline: timeline
+                )
+            )
+            host.frame = NSRect(x: 0, y: 0, width: 720, height: 640)
+            host.layoutSubtreeIfNeeded()
+        }
+        var durations: [TimeInterval] = []
 
         measure(metrics: metrics, options: options) {
+            let start = ProcessInfo.processInfo.systemUptime
             autoreleasepool {
                 let host = NSHostingView(
                     rootView: AudioRowsBenchmarkRoot(
@@ -27,53 +40,115 @@ final class WorkspacePerformanceTests: XCTestCase {
                 host.layoutSubtreeIfNeeded()
                 XCTAssertEqual(host.bounds.height, 640)
             }
+            durations.append(ProcessInfo.processInfo.systemUptime - start)
         }
+        assertP95(durations, isBelow: 0.1, scenario: "PodPin 100-row first screen")
     }
 
     func testThousandFolderTreeOpenAndSelectionBaseline() {
-        let folders = makeFolderTree(totalCount: 1_000)
+        let persistedFolders = makePersistedFolders(totalCount: 1_000)
+        let selectedFolderID = persistedFolders.last!.id
+        var durations: [TimeInterval] = []
+        renderFolderScenario(
+            persistedFolders: persistedFolders,
+            selectedFolderID: selectedFolderID
+        )
 
         measure(metrics: metrics, options: options) {
+            let start = ProcessInfo.processInfo.systemUptime
             autoreleasepool {
-                let host = NSHostingView(
-                    rootView: FolderTreeBenchmarkRoot(
-                        folders: folders,
-                        selectedFolderID: folders.last?.id
-                    )
+                self.renderFolderScenario(
+                    persistedFolders: persistedFolders,
+                    selectedFolderID: selectedFolderID
                 )
-                host.frame = NSRect(x: 0, y: 0, width: 320, height: 640)
-                host.layoutSubtreeIfNeeded()
-                XCTAssertEqual(host.bounds.height, 640)
             }
+            durations.append(ProcessInfo.processInfo.systemUptime - start)
         }
+        assertP95(durations, isBelow: 0.1, scenario: "PodPin 1,000-folder tree")
     }
 
     func testPlaybackTimelineUpdateDoesNotRebuildFolderTreeBaseline() {
         let timeline = PlaybackTimelineSession()
-        let folders = makeFolderTree(totalCount: 1_000)
+        let folders = LibraryFolderTreeBuilder.buildSynchronously(
+            from: makePersistedFolders(totalCount: 1_000)
+        )
         let host = NSHostingView(
             rootView: FolderTreeWithTimelineBenchmarkRoot(folders: folders, timeline: timeline)
         )
         host.frame = NSRect(x: 0, y: 0, width: 320, height: 640)
         host.layoutSubtreeIfNeeded()
+        renderTimelineUpdates(timeline: timeline, host: host)
+        var durations: [TimeInterval] = []
 
         measure(metrics: metrics, options: options) {
-            for second in 0..<20 {
-                timeline.update(
-                    PlaybackTimelineSnapshot(
-                        currentTime: TimeInterval(second),
-                        duration: 1_800
-                    )
-                )
-                host.layoutSubtreeIfNeeded()
-            }
+            let start = ProcessInfo.processInfo.systemUptime
+            self.renderTimelineUpdates(timeline: timeline, host: host)
+            durations.append(ProcessInfo.processInfo.systemUptime - start)
         }
+        assertP95(durations, isBelow: 0.1, scenario: "PodPin playback timeline updates")
+    }
+
+    func testTenThousandFolderTreeP95Budget() {
+        let persistedFolders = makePersistedFolders(totalCount: 10_000)
+        let selectedFolderID = persistedFolders.last!.id
+        var durations: [TimeInterval] = []
+        renderFolderScenario(
+            persistedFolders: persistedFolders,
+            selectedFolderID: selectedFolderID
+        )
+
+        measure(metrics: [XCTClockMetric()], options: options) {
+            let start = ProcessInfo.processInfo.systemUptime
+            autoreleasepool {
+                self.renderFolderScenario(
+                    persistedFolders: persistedFolders,
+                    selectedFolderID: selectedFolderID
+                )
+            }
+            durations.append(ProcessInfo.processInfo.systemUptime - start)
+        }
+
+        assertP95(durations, isBelow: 0.2, scenario: "PodPin 10,000-folder tree")
     }
 
     private var options: XCTMeasureOptions {
         let options = XCTMeasureOptions()
-        options.iterationCount = 3
+        options.iterationCount = 30
         return options
+    }
+
+    private func renderTimelineUpdates(
+        timeline: PlaybackTimelineSession,
+        host: NSHostingView<FolderTreeWithTimelineBenchmarkRoot>
+    ) {
+        for second in 0..<20 {
+            timeline.update(
+                PlaybackTimelineSnapshot(
+                    currentTime: TimeInterval(second),
+                    duration: 1_800
+                )
+            )
+            host.layoutSubtreeIfNeeded()
+        }
+    }
+
+    private func assertP95(
+        _ durations: [TimeInterval],
+        isBelow budget: TimeInterval,
+        scenario: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let sorted = durations.sorted()
+        let index = max(0, Int(ceil(Double(sorted.count) * 0.95)) - 1)
+        let p95 = sorted[index]
+        XCTAssertLessThan(
+            p95,
+            budget,
+            "\(scenario) P95 was \(p95)s; budget is \(budget)s",
+            file: file,
+            line: line
+        )
     }
 
     private func makeRows(count: Int) -> [LibraryItemRow] {
@@ -90,38 +165,46 @@ final class WorkspacePerformanceTests: XCTestCase {
         }
     }
 
-    private func makeFolderTree(totalCount: Int) -> [LibraryFolderNode] {
-        let inbox = LibraryFolderNode(
-            id: LibraryFolder.inboxID,
-            name: "收件箱",
-            isSystemFolder: true
-        )
-        let branchCount = 10
-        let remaining = max(totalCount - 1, branchCount)
-        let baseCount = remaining / branchCount
-        let extraCount = remaining % branchCount
-        let branches = (0..<branchCount).map { branch in
-            folderChain(
-                branch: branch,
-                depth: 0,
-                count: baseCount + (branch < extraCount ? 1 : 0)
+    private func makePersistedFolders(totalCount: Int) -> [LibraryFolder] {
+        let ids = (0..<totalCount).map { index in
+            index == 0 ? LibraryFolder.inboxID : UUID()
+        }
+        return ids.enumerated().map { index, id in
+            LibraryFolder(
+                id: id,
+                parentID: index == 0 ? nil : ids[(index - 1) / 8],
+                name: index == 0 ? "Inbox" : "文件夹 \(index)",
+                systemKind: index == 0 ? .inbox : .user,
+                createdAt: Date(timeIntervalSince1970: TimeInterval(index))
             )
         }
-        return [inbox] + branches
     }
 
-    private func folderChain(
-        branch: Int,
-        depth: Int,
-        count: Int
-    ) -> LibraryFolderNode {
-        LibraryFolderNode(
-            id: UUID(),
-            name: "文件夹 \(branch)-\(depth)",
-            children: count > 1
-                ? [folderChain(branch: branch, depth: depth + 1, count: count - 1)]
-                : []
+    private func renderFolderScenario(
+        persistedFolders: [LibraryFolder],
+        selectedFolderID: UUID
+    ) {
+        let folders = LibraryFolderTreeBuilder.buildSynchronously(from: persistedFolders)
+        let expanded = LibraryFolderOutline.initiallyExpandedFolderIDs(
+            in: folders,
+            selectedFolderID: selectedFolderID
         )
+        let visibleRows = LibraryFolderOutline.visibleRows(
+            in: folders,
+            expandedFolderIDs: expanded,
+            excluding: []
+        )
+        XCTAssertTrue(visibleRows.contains { $0.id == selectedFolderID })
+
+        let host = NSHostingView(
+            rootView: FolderTreeBenchmarkRoot(
+                folders: folders,
+                selectedFolderID: selectedFolderID
+            )
+        )
+        host.frame = NSRect(x: 0, y: 0, width: 320, height: 640)
+        host.layoutSubtreeIfNeeded()
+        XCTAssertEqual(host.bounds.height, 640)
     }
 }
 

@@ -11,6 +11,27 @@ struct LibraryFolderTreePicker: View {
     let onSelect: (UUID?) -> Void
 
     @Environment(\.designPalette) private var palette
+    @State private var expandedFolderIDs: Set<UUID>
+
+    init(
+        folders: [LibraryFolderNode],
+        excluding: Set<UUID> = [],
+        selectedFolderID: UUID? = nil,
+        includesLibraryRoot: Bool = false,
+        onSelect: @escaping (UUID?) -> Void
+    ) {
+        self.folders = folders
+        self.excluding = excluding
+        self.selectedFolderID = selectedFolderID
+        self.includesLibraryRoot = includesLibraryRoot
+        self.onSelect = onSelect
+        _expandedFolderIDs = State(
+            initialValue: LibraryFolderOutline.initiallyExpandedFolderIDs(
+                in: folders,
+                selectedFolderID: selectedFolderID
+            )
+        )
+    }
 
     var body: some View {
         ScrollView {
@@ -19,11 +40,12 @@ struct LibraryFolderTreePicker: View {
                     rootButton
                 }
 
-                ForEach(folders) { folder in
-                    LibraryFolderTreePickerNode(
-                        folder: folder,
-                        excluding: excluding,
+                ForEach(visibleRows) { row in
+                    LibraryFolderTreePickerRow(
+                        row: row,
+                        isExpanded: expandedFolderIDs.contains(row.id),
                         selectedFolderID: selectedFolderID,
+                        onToggleExpansion: { toggleExpansion(row.id) },
                         onSelect: onSelect
                     )
                 }
@@ -32,6 +54,42 @@ struct LibraryFolderTreePicker: View {
         }
         .background(palette.surfaceElevated, in: .rect(cornerRadius: DesignMetrics.cornerRadius))
         .accessibilityLabel("选择文件夹")
+        .onChange(of: selectedFolderID) { _, selectedFolderID in
+            expandPath(to: selectedFolderID)
+        }
+        .onChange(of: allFolderIDs) { _, currentFolderIDs in
+            expandedFolderIDs.formIntersection(currentFolderIDs)
+            expandPath(to: selectedFolderID)
+        }
+    }
+
+    private var visibleRows: [LibraryFolderOutlineRow] {
+        LibraryFolderOutline.visibleRows(
+            in: folders,
+            expandedFolderIDs: expandedFolderIDs,
+            excluding: excluding
+        )
+    }
+
+    private var allFolderIDs: Set<UUID> {
+        LibraryFolderOutline.allFolderIDs(in: folders)
+    }
+
+    private func toggleExpansion(_ folderID: UUID) {
+        if expandedFolderIDs.contains(folderID) {
+            expandedFolderIDs.remove(folderID)
+        } else {
+            expandedFolderIDs.insert(folderID)
+        }
+    }
+
+    private func expandPath(to folderID: UUID?) {
+        expandedFolderIDs.formUnion(
+            LibraryFolderOutline.initiallyExpandedFolderIDs(
+                in: folders,
+                selectedFolderID: folderID
+            )
+        )
     }
 
     private var rootButton: some View {
@@ -64,56 +122,48 @@ struct LibraryFolderTreePicker: View {
     }
 }
 
-private struct LibraryFolderTreePickerNode: View {
-    let folder: LibraryFolderNode
-    let excluding: Set<UUID>
+private struct LibraryFolderTreePickerRow: View {
+    let row: LibraryFolderOutlineRow
+    let isExpanded: Bool
     let selectedFolderID: UUID?
+    let onToggleExpansion: () -> Void
     let onSelect: (UUID?) -> Void
 
     @Environment(\.designPalette) private var palette
-    @State private var isExpanded = true
 
     var body: some View {
-        if excluding.contains(folder.id) {
-            ForEach(folder.children) { child in
-                LibraryFolderTreePickerNode(
-                    folder: child,
-                    excluding: excluding,
-                    selectedFolderID: selectedFolderID,
-                    onSelect: onSelect
+        HStack(spacing: DesignMetrics.space4) {
+            if row.hasChildren {
+                Button(
+                    isExpanded ? "收起\(row.folder.name)" : "展开\(row.folder.name)",
+                    systemImage: "chevron.right",
+                    action: onToggleExpansion
                 )
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .foregroundStyle(palette.textSecondary)
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .frame(width: DesignMetrics.space16, height: DesignMetrics.space24)
+            } else {
+                Color.clear
+                    .frame(width: DesignMetrics.space16, height: DesignMetrics.space24)
+                    .accessibilityHidden(true)
             }
-        } else if folder.children.isEmpty {
+
             folderButton
-        } else {
-            DisclosureGroup(isExpanded: $isExpanded) {
-                VStack(alignment: .leading, spacing: DesignMetrics.space4) {
-                    ForEach(folder.children) { child in
-                        LibraryFolderTreePickerNode(
-                            folder: child,
-                            excluding: excluding,
-                            selectedFolderID: selectedFolderID,
-                            onSelect: onSelect
-                        )
-                    }
-                }
-                .padding(.leading, DesignMetrics.space16)
-            } label: {
-                folderButton
-            }
-            .tint(palette.textSecondary)
         }
+        .padding(.leading, CGFloat(row.depth) * DesignMetrics.space16)
     }
 
     private var folderButton: some View {
         Button {
-            onSelect(folder.id)
+            onSelect(row.folder.id)
         } label: {
             HStack(spacing: DesignMetrics.space8) {
-                Image(systemName: selectedFolderID == folder.id ? "checkmark" : "folder")
+                Image(systemName: selectedFolderID == row.folder.id ? "checkmark" : "folder")
                     .frame(width: DesignMetrics.space16)
                     .accessibilityHidden(true)
-                Text(folder.name)
+                Text(row.folder.name)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
@@ -122,13 +172,13 @@ private struct LibraryFolderTreePickerNode: View {
             .padding(.horizontal, DesignMetrics.space8)
             .frame(minHeight: DesignMetrics.titlebarControlSize, alignment: .leading)
             .background(
-                selectedFolderID == folder.id ? palette.selection : Color.clear,
+                selectedFolderID == row.folder.id ? palette.selection : Color.clear,
                 in: .rect(cornerRadius: DesignMetrics.space4)
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(folder.name)
-        .accessibilityIdentifier("library.folder.\(folder.id.uuidString)")
+        .accessibilityLabel(row.folder.name)
+        .accessibilityIdentifier("library.folder.\(row.folder.id.uuidString)")
     }
 }
 

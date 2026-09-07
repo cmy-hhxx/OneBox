@@ -4,7 +4,8 @@ import SwiftUI
 
 struct HostSidebar: View {
     let catalog: ToolCatalog
-    @Binding var selection: ToolID?
+    let selection: ToolID?
+    let onSelect: (ToolID) -> Void
     let onCollapse: () -> Void
 
     @Environment(\.designPalette) private var palette
@@ -36,7 +37,7 @@ struct HostSidebar: View {
                         registration: registration,
                         isSelected: selection == registration.id
                     ) {
-                        selection = registration.id
+                        onSelect(registration.id)
                     }
                 }
             }

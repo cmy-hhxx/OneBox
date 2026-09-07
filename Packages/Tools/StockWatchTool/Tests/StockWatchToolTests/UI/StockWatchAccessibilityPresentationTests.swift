@@ -57,6 +57,63 @@ final class StockWatchAccessibilityPresentationTests: XCTestCase {
         XCTAssertEqual(AlertThresholdPresentation.valueText(2.5), "2.5%")
     }
 
+    @MainActor
+    func testThresholdDraftCommitsOnlyOnceWhenEditingEnds() {
+        let initial = AlertConfiguration.default
+        let presentation = AlertThresholdPresentationSession(configuration: initial)
+        var committedConfigurations: [AlertConfiguration] = []
+
+        presentation.editingChanged(
+            true,
+            field: .rising,
+            currentConfiguration: initial,
+            commit: { committedConfigurations.append($0) }
+        )
+        presentation.risingThreshold = 4
+        presentation.risingThreshold = 5
+        presentation.risingThreshold = 6
+
+        XCTAssertTrue(committedConfigurations.isEmpty)
+
+        presentation.editingChanged(
+            false,
+            field: .rising,
+            currentConfiguration: initial,
+            commit: { committedConfigurations.append($0) }
+        )
+
+        XCTAssertEqual(committedConfigurations.count, 1)
+        XCTAssertEqual(committedConfigurations.first?.risingThreshold, 6)
+        XCTAssertEqual(committedConfigurations.first?.fallingThreshold, initial.fallingThreshold)
+    }
+
+    @MainActor
+    func testThresholdDraftPreservesConcurrentNonThresholdConfigurationChanges() {
+        let initial = AlertConfiguration.default
+        let presentation = AlertThresholdPresentationSession(configuration: initial)
+        presentation.editingChanged(
+            true,
+            field: .falling,
+            currentConfiguration: initial,
+            commit: { _ in XCTFail("Editing start must not commit") }
+        )
+        presentation.fallingThreshold = 7
+
+        var current = initial
+        current.basis = .targetPrice
+        var committed: AlertConfiguration?
+        presentation.editingChanged(
+            false,
+            field: .falling,
+            currentConfiguration: current,
+            commit: { committed = $0 }
+        )
+
+        XCTAssertEqual(committed?.basis, .targetPrice)
+        XCTAssertEqual(committed?.risingThreshold, initial.risingThreshold)
+        XCTAssertEqual(committed?.fallingThreshold, 7)
+    }
+
     func testRefreshAccessibilityValueContainsFormattedTime() {
         let refresh = Date(timeIntervalSince1970: 1_700_000_000)
 

@@ -1,10 +1,9 @@
 import CoreGraphics
 
 public enum DesignMetrics {
-    public static let windowAspectRatio = CGSize(width: 1048, height: 648)
-    public static let defaultWindowSize = windowAspectRatio
+    public static let defaultWindowSize = CGSize(width: 1048, height: 648)
     public static let minimumWindowSize = CGSize(
-        width: 556 * windowAspectRatio.width / windowAspectRatio.height,
+        width: 556 * defaultWindowSize.width / defaultWindowSize.height,
         height: 556
     )
 

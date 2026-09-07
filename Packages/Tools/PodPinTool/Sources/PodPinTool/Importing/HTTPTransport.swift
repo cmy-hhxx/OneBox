@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct HTTPTransportResponse: @unchecked Sendable {
@@ -443,8 +444,13 @@ private final class HTTPDownloadOperation: @unchecked Sendable {
             .appending(path: "podpin-http-\(UUID().uuidString)")
         do {
             // URLSession owns and removes its download location when this
-            // completion handler returns. Copying avoids racing that cleanup.
-            try fileManager.copyItem(at: temporaryURL, to: stableURL)
+            // completion handler returns. Move it into our ownership without
+            // copying the full payload; only cross-volume moves need a copy.
+            do {
+                try fileManager.moveItem(at: temporaryURL, to: stableURL)
+            } catch  where Self.isCrossDeviceMoveError(error) {
+                try fileManager.copyItem(at: temporaryURL, to: stableURL)
+            }
             finish(
                 with: .success(
                     HTTPDownloadResponse(
@@ -454,6 +460,17 @@ private final class HTTPDownloadOperation: @unchecked Sendable {
         } catch {
             finish(with: .failure(error))
         }
+    }
+
+    private static func isCrossDeviceMoveError(_ error: Error) -> Bool {
+        let error = error as NSError
+        if error.domain == NSPOSIXErrorDomain, error.code == Int(EXDEV) {
+            return true
+        }
+        guard let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError else {
+            return false
+        }
+        return isCrossDeviceMoveError(underlying)
     }
 
     private func install(

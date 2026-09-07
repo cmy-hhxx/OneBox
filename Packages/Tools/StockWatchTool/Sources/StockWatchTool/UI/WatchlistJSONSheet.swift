@@ -16,9 +16,11 @@ enum WatchlistJSONPresentation {
 
 @MainActor
 struct WatchlistJSONSheet: View {
-    @ObservedObject var store: MonitorStore
+    let store: MonitorStore
     let copyText: (String) -> Bool
     let onImported: () -> Void
+
+    private let watchlistPresentation: WatchlistPresentationSession
 
     @Environment(\.designPalette) private var palette
     @Environment(\.dismiss) private var dismiss
@@ -26,6 +28,17 @@ struct WatchlistJSONSheet: View {
     @State private var resultMessage: String?
     @State private var isImporting = false
     @State private var isConfirmingReplacement = false
+
+    init(
+        store: MonitorStore,
+        copyText: @escaping (String) -> Bool,
+        onImported: @escaping () -> Void
+    ) {
+        self.store = store
+        self.copyText = copyText
+        self.onImported = onImported
+        self.watchlistPresentation = store.watchlistPresentation
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.space16) {
@@ -52,7 +65,7 @@ struct WatchlistJSONSheet: View {
         } message: {
             Text(
                 WatchlistJSONPresentation.confirmationMessage(
-                    currentCount: store.instruments.count
+                    currentCount: watchlistPresentation.instruments.count
                 )
             )
         }
@@ -143,7 +156,7 @@ struct WatchlistJSONSheet: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(palette.accent)
-            .disabled(!canImport || isImporting || store.isWatchlistMutating)
+            .disabled(!canImport || isImporting || watchlistPresentation.isMutating)
             .keyboardShortcut(.defaultAction)
         }
     }

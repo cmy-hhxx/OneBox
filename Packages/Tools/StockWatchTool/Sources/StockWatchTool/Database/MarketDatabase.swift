@@ -5,8 +5,8 @@ import OSLog
 actor MarketDatabase {
     static let defaultFileName = "marketsprite.sqlite"
     private static let signposter = OSSignposter(
-        subsystem: "com.cmy.OneBox.StockWatch",
-        category: "Database"
+        subsystem: "com.cmy.OneBox",
+        category: "StockWatch"
     )
 
     private let databaseQueue: DatabaseQueue

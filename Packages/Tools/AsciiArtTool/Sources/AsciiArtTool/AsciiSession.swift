@@ -6,7 +6,7 @@ import Observation
 final class AsciiSession {
     var settings = AsciiSettings()
     var transform = CanvasTransform()
-    var isInspectorPresented = true
+    var isInspectorPresented = false
     private(set) var source: AsciiSource?
     private(set) var sourceRevision = 0
     private(set) var isImporting = false
@@ -153,6 +153,11 @@ final class AsciiSession {
     func setMetalReady(_ isReady: Bool) {
         isMetalReady = isReady
         isMetalUnavailable = !isReady
+    }
+
+    func resetMetalReadiness() {
+        isMetalReady = false
+        isMetalUnavailable = false
     }
 
     func retryMetalPreparation() {

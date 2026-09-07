@@ -17,11 +17,24 @@ struct ImportEntryContext: Hashable, Identifiable, Sendable {
     }
 }
 
-/// The library window owns every long-lived workspace. Folder selection stays
-/// in the store; this route only decides which workspace occupies the detail
-/// pane.
-enum LibraryDestination: Hashable, Sendable {
+/// A typed route retained in order so a pushed player can reveal the exact
+/// workspace beneath it when it is popped.
+enum PodPinRoute: Hashable, Identifiable, Sendable {
+    enum ID: Hashable, Sendable {
+        case library
+        case importLink(UUID)
+        case nowPlaying
+    }
+
     case library
     case importLink(ImportEntryContext)
     case nowPlaying
+
+    var id: ID {
+        switch self {
+        case .library: .library
+        case .importLink(let context): .importLink(context.id)
+        case .nowPlaying: .nowPlaying
+        }
+    }
 }

@@ -1,5 +1,6 @@
 import Accessibility
 import OneBoxDesignSystem
+import OneBoxRuntime
 import SwiftUI
 
 @MainActor
@@ -9,6 +10,7 @@ struct StockWatchView: View {
     private let session: StockWatchModuleSession
 
     @Environment(\.designPalette) private var palette
+    @Environment(\.toolContentReadinessReporter) private var contentReadinessReporter
     @State private var startupPathActionMessage: String?
     @State private var isClearCacheConfirmationPresented = false
 
@@ -20,10 +22,7 @@ struct StockWatchView: View {
         self.platform = platform
         self.session = session
         _bootstrap = StateObject(
-            wrappedValue: StockWatchBootstrap(
-                platform: platform,
-                lifecycleCoordinator: lifecycleCoordinator
-            )
+            wrappedValue: session.makeBootstrap(platform: platform)
         )
     }
 
@@ -47,6 +46,14 @@ struct StockWatchView: View {
                 await bootstrap.run()
             }
         }
+        .onChange(of: firstContentResolved, initial: true) { _, isResolved in
+            guard isResolved else { return }
+            contentReadinessReporter.reportFirstContentReady()
+        }
+    }
+
+    private var firstContentResolved: Bool {
+        bootstrap.mountedRun != nil || bootstrap.failure != nil
     }
 
     private var startupProgress: some View {

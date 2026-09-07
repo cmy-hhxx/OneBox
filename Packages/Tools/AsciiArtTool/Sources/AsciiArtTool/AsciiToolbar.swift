@@ -5,7 +5,8 @@ import SwiftUI
 struct AsciiToolbar: View {
     @Bindable var session: AsciiSession
     let isExporting: Bool
-    let parameterFocus: AccessibilityFocusState<Bool>.Binding
+    let parameterKeyboardFocus: FocusState<Bool>.Binding
+    let parameterAccessibilityFocus: AccessibilityFocusState<Bool>.Binding
     let open: () -> Void
     let toggleParameters: () -> Void
     let export: () -> Void
@@ -100,7 +101,9 @@ struct AsciiToolbar: View {
                 .help(session.isInspectorPresented ? "收起参数" : "显示参数")
                 .accessibilityValue(session.isInspectorPresented ? "已打开" : "已关闭")
                 .accessibilityInputLabels(["参数", "显示参数", "收起参数"])
-                .accessibilityFocused(parameterFocus)
+                .accessibilityIdentifier("ascii.inspector-toggle")
+                .focused(parameterKeyboardFocus)
+                .accessibilityFocused(parameterAccessibilityFocus)
 
                 Button("导出 PNG", systemImage: "square.and.arrow.down", action: export)
                     .buttonStyle(.borderedProminent)

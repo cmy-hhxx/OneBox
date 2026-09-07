@@ -2,7 +2,7 @@ import Combine
 import Foundation
 
 /// The lightweight state consumed by surfaces that need live playback updates.
-/// Keeping it outside `PodPinStore` prevents the library and settings trees from
+/// Keeping it outside `PodPinStore` prevents the library and playback surfaces from
 /// being invalidated by the player's half-second time observer.
 @MainActor
 struct PlaybackSnapshot: Equatable {

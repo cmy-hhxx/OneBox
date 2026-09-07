@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import XCTest
 
@@ -6,11 +5,10 @@ import XCTest
 
 @MainActor
 final class AppPreferencesTests: XCTestCase {
-    func testIndependentAppPreferenceKeysRestoreWithoutMigration() throws {
+    func testActiveAppPreferenceKeysRestoreWithoutMigration() throws {
         let suiteName = "AppPreferencesIndependentSuiteTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set(0.68, forKey: "podpin.nowPlayingContentOpacity")
         defaults.set(1.5, forKey: "podpin.playbackRate")
         defaults.set(0.42, forKey: "podpin.playbackVolume")
         defaults.set(
@@ -20,40 +18,20 @@ final class AppPreferencesTests: XCTestCase {
 
         let preferences = AppPreferences(defaults: defaults)
 
-        XCTAssertEqual(preferences.nowPlayingContentOpacity, 0.68)
         XCTAssertEqual(preferences.playbackRate, 1.5)
         XCTAssertEqual(preferences.playbackVolume, 0.42)
         XCTAssertEqual(preferences.lastLibraryCollection, .downloaded)
     }
 
-    func testNowPlayingContentOpacityRestoresClampsAndPersists() throws {
-        let suiteName = "AppPreferencesTests-\(UUID().uuidString)"
+    func testLegacyNowPlayingOpacityKeyIsLeftUntouched() throws {
+        let suiteName = "AppPreferencesLegacyOpacityTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         defaults.set(0.65, forKey: "podpin.nowPlayingContentOpacity")
-        let preferences = AppPreferences(defaults: defaults)
+        _ = AppPreferences(defaults: defaults)
 
-        XCTAssertEqual(preferences.nowPlayingContentOpacity, 0.65)
-
-        preferences.nowPlayingContentOpacity = 0.05
-        XCTAssertEqual(preferences.nowPlayingContentOpacity, 0.45)
-        XCTAssertEqual(defaults.double(forKey: "podpin.nowPlayingContentOpacity"), 0.45)
-    }
-
-    func testNowPlayingContentOpacityPublishesChanges() throws {
-        let suiteName = "AppPreferencesOpacityPublisherTests-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let preferences = AppPreferences(defaults: defaults)
-        var publishedValues = [Double]()
-        let cancellable = preferences.$nowPlayingContentOpacity.sink { publishedValues.append($0) }
-
-        preferences.nowPlayingContentOpacity = 0.45
-
-        XCTAssertEqual(publishedValues.last, 0.45)
-        withExtendedLifetime(cancellable) {}
+        XCTAssertEqual(defaults.double(forKey: "podpin.nowPlayingContentOpacity"), 0.65)
     }
 
     func testPlaybackTimeFormatterUsesAnHourOnlyWhenNeeded() {
@@ -83,6 +61,18 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertEqual(AppPreferences.nextPlaybackRate(after: 1.25), 1.5)
         XCTAssertEqual(AppPreferences.nextPlaybackRate(after: 1.5), 2)
         XCTAssertEqual(AppPreferences.nextPlaybackRate(after: 2), 0.75)
+    }
+
+    func testPlaybackRatePersistsWithoutAPlaybackItem() throws {
+        let suiteName = "AppPreferencesPlaybackRateTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let preferences = AppPreferences(defaults: defaults)
+        preferences.playbackRate = 1.5
+
+        XCTAssertEqual(defaults.double(forKey: "podpin.playbackRate"), 1.5)
+        XCTAssertEqual(AppPreferences(defaults: defaults).playbackRate, 1.5)
     }
 
     func testPlaybackVolumeClampsAndRestores() throws {

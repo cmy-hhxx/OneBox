@@ -96,8 +96,11 @@ fi
 "$script_directory/check-coverage-configuration.sh"
 
 # Offline-tool packaging re-signs the local app. Remove that disposable bundle
-# so a later test build cannot mix its signature with XCTest products.
+# so a later test build cannot mix its signature with XCTest products. A launched
+# UI test runner can also retain a macOS provenance ACL that prevents relinking;
+# recreate that disposable bundle on every deterministic CLI run.
 rm -rf "$products_root/Debug/OneBox.app"
+rm -rf "$products_root/Debug/OneBoxUITests-Runner.app"
 rm -f "$products_root"/OneBox_*.xctestrun(N)
 mkdir -p "$result_directory" "$swiftpm_root"
 
@@ -127,7 +130,8 @@ set -o pipefail
     fi
     run_swift_package_tests \
         PodPinTool \
-        "$repository_root/Packages/Tools/PodPinTool"
+        "$repository_root/Packages/Tools/PodPinTool" \
+        --filter 'PodPinToolTests\.'
 
     if [[ "$test_mode" == "default" ]]; then
         xcodebuild \

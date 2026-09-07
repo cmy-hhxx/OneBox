@@ -5,12 +5,18 @@ import SwiftUI
 struct PodPinLibraryView: View {
     @EnvironmentObject private var store: PodPinStore
     @EnvironmentObject private var navigator: AppNavigator
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.oneBoxAccessibilityReduceMotionOverride) private var reduceMotionOverride
     @Environment(\.designPalette) private var palette
     @State private var sheet: LibrarySheet?
     @State private var folderPendingDeletion: LibraryFolderNode?
     @State private var folderDeletionReason: String?
     @State private var itemPendingDeletion: LibraryItemRow?
     @State private var selectedItemID: UUID?
+
+    private var reduceMotion: Bool {
+        reduceMotionOverride ?? systemReduceMotion
+    }
 
     var body: some View {
         LibrarySessionObserver(session: store.librarySession) {
@@ -35,57 +41,16 @@ struct PodPinLibraryView: View {
         .sheet(item: $sheet) { sheet in
             sheetView(for: sheet)
         }
-        .alert(
-            "删除文件夹？",
-            isPresented: Binding(
-                get: { folderPendingDeletion != nil },
-                set: { if !$0 { folderPendingDeletion = nil } }
-            ),
-            presenting: folderPendingDeletion
-        ) { folder in
-            Button("删除", role: .destructive) {
-                folderPendingDeletion = nil
-                store.performLibraryOperation { await store.deleteFolder(folder.id) }
-            }
-            Button("取消", role: .cancel) { folderPendingDeletion = nil }
-        } message: { folder in
-            Text("“\(folder.name)”为空，删除后无法恢复。")
-        }
-        .alert(
-            "无法删除文件夹",
-            isPresented: Binding(
-                get: { folderDeletionReason != nil },
-                set: { if !$0 { folderDeletionReason = nil } }
-            )
-        ) {
-            Button("好") { folderDeletionReason = nil }
-        } message: {
-            Text(folderDeletionReason ?? "")
-        }
-        .alert(
-            "删除这条音频？",
-            isPresented: Binding(
-                get: { itemPendingDeletion != nil },
-                set: { if !$0 { itemPendingDeletion = nil } }
-            ),
-            presenting: itemPendingDeletion
-        ) { item in
-            Button("删除", role: .destructive) {
-                itemPendingDeletion = nil
-                store.performLibraryOperation { await store.deleteItem(item.id) }
-            }
-            Button("取消", role: .cancel) { itemPendingDeletion = nil }
-        } message: { item in
-            Text("“\(item.title)”及其离线音频（如有）将被移除。")
-        }
-        .podPinErrorAlert(store: store)
         .background(
             ImportVerificationRoute(
                 session: store.importSession,
                 selectedFolderID: store.selectedFolderID,
-                onPresent: navigator.openImport(in:)
+                onPresent: openImport(in:)
             )
         )
+        .onExitCommand {
+            navigator.handleExitCommand(reduceMotion: reduceMotion)
+        }
     }
 
     @ViewBuilder
@@ -130,22 +95,21 @@ struct PodPinLibraryView: View {
     }
 
     private var importEntryContext: ImportEntryContext {
-        if case .importLink(let context) = navigator.destination {
-            return context
-        }
-        return ImportEntryContext(destinationFolderID: store.selectedFolderID)
+        navigator.importContext
+            ?? ImportEntryContext(destinationFolderID: store.selectedFolderID)
     }
 
     private var nowPlayingWorkspace: some View {
         NowPlayingView(
-            contentOpacity: store.preferences.nowPlayingContentOpacity,
+            queueIsPresented: $navigator.isQueuePresented,
             playbackIdentity: store.playbackPresentation.identity,
             playbackTimeline: store.playbackPresentation.timeline,
             output: store.playbackPresentation.output,
             queue: store.playbackQueue.session,
             downloadSession: store.downloadSession,
             outputController: store.playbackOutputController,
-            onClose: { navigator.closeNowPlaying() },
+            backLabel: nowPlayingBackLabel,
+            onClose: { navigator.closeNowPlaying(reduceMotion: reduceMotion) },
             onTogglePlayback: { store.togglePlayback() },
             onSkipBackward: { store.skipBackward() },
             onSkipForward: { store.skipForward() },
@@ -165,12 +129,20 @@ struct PodPinLibraryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private var nowPlayingBackLabel: String {
+        if case .some(.importLink) = navigator.routeStack.dropLast().last {
+            "返回导入"
+        } else {
+            "返回资料库"
+        }
+    }
+
     private var libraryWorkspace: some View {
         LibraryWorkspaceView(
             folders: store.folderTree(),
             selectedCollection: $store.selectedCollection,
-            destination: $navigator.destination,
-            isSettingsPresented: navigator.isSettingsPresented,
+            routeStack: navigator.routeStack,
+            routeDirection: navigator.routeDirection,
             selectedFolderTitle: store.selectedFolderTitle(),
             items: store.visibleItems(),
             itemsPhase: store.itemsPhase,
@@ -183,6 +155,8 @@ struct PodPinLibraryView: View {
             importContent: ImportWorkspaceView(
                 store: store,
                 entryContext: importEntryContext,
+                draft: $navigator.importDraft,
+                isActive: isImportRouteActive,
                 onImportSucceeded: { importedItemID in
                     selectedItemID = importedItemID
                 },
@@ -191,10 +165,6 @@ struct PodPinLibraryView: View {
                 }
             )
             .id(importEntryContext.id),
-            settingsContent: PodPinSettingsView(
-                preferences: store.preferences,
-                onSetPlaybackRate: { store.setPlaybackRate($0) }
-            ),
             nowPlayingContent: nowPlayingWorkspace,
             compactPlayerContent: CompactPlayerBar(
                 identity: store.playbackPresentation.identity,
@@ -206,9 +176,10 @@ struct PodPinLibraryView: View {
                 onSkipForward: { store.skipForward() },
                 onSeek: { store.seek(to: $0) },
                 onSetRate: { store.setPlaybackRate($0) },
-                onImport: { navigator.openImport(in: store.selectedFolderID) },
-                onOpenQueue: navigator.showNowPlaying
+                onImport: { openImport(in: store.selectedFolderID) },
+                onOpenQueue: { navigator.showQueue(reduceMotion: reduceMotion) }
             ),
+            notice: currentNotice,
             onRequestFolderEditor: { request in
                 sheet = .folderEditor(request)
             },
@@ -216,10 +187,77 @@ struct PodPinLibraryView: View {
             onItemAction: handleItemAction,
             onRetryItems: store.retrySelectedFolder,
             onLoadMoreItems: store.loadMoreItems,
-            onShowNowPlaying: navigator.showNowPlaying,
-            onToggleSettings: navigator.toggleSettings,
-            onCloseSettings: navigator.closeSettings
+            onOpenImport: openImport(in:),
+            onShowLibrary: { navigator.showLibraryContent(reduceMotion: reduceMotion) },
+            onShowNowPlaying: { navigator.showNowPlaying(reduceMotion: reduceMotion) },
+            onCopyNoticeDetails: copyNoticeDetails,
+            onDismissNotice: dismissNotice
         )
+        .confirmationDialog(
+            "删除文件夹？",
+            isPresented: Binding(
+                get: { folderPendingDeletion != nil },
+                set: { if !$0 { folderPendingDeletion = nil } }
+            ),
+            presenting: folderPendingDeletion
+        ) { folder in
+            Button("删除", role: .destructive) {
+                folderPendingDeletion = nil
+                store.performLibraryOperation { await store.deleteFolder(folder.id) }
+            }
+            Button("取消", role: .cancel) { folderPendingDeletion = nil }
+        } message: { folder in
+            Text("“\(folder.name)”为空，删除后无法恢复。")
+        }
+        .confirmationDialog(
+            "删除这条音频？",
+            isPresented: Binding(
+                get: { itemPendingDeletion != nil },
+                set: { if !$0 { itemPendingDeletion = nil } }
+            ),
+            presenting: itemPendingDeletion
+        ) { item in
+            Button("删除", role: .destructive) {
+                itemPendingDeletion = nil
+                store.performLibraryOperation { await store.deleteItem(item.id) }
+            }
+            Button("取消", role: .cancel) { itemPendingDeletion = nil }
+        } message: { item in
+            Text("“\(item.title)”及其离线音频（如有）将被移除。")
+        }
+    }
+
+    private var isImportRouteActive: Bool {
+        if case .importLink = navigator.currentRoute { return true }
+        return false
+    }
+
+    private func openImport(in folderID: UUID) {
+        navigator.openImport(in: folderID, reduceMotion: reduceMotion)
+    }
+
+    private var currentNotice: PodPinNotice? {
+        if let folderDeletionReason {
+            return PodPinNotice(
+                id: "folder-deletion",
+                title: "无法删除文件夹",
+                message: folderDeletionReason
+            )
+        }
+        return store.userFacingError.map(PodPinNotice.init(error:))
+    }
+
+    private func copyNoticeDetails(_ details: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(details, forType: .string)
+    }
+
+    private func dismissNotice() {
+        if folderDeletionReason != nil {
+            folderDeletionReason = nil
+        } else {
+            store.dismissError()
+        }
     }
 
     private func saveFolderEditor(
@@ -278,10 +316,11 @@ struct PodPinLibraryView: View {
     }
 
     private func excludedFolderDestinations(for folderID: UUID) -> Set<UUID> {
+        let childrenByParent = Dictionary(grouping: store.folders, by: \.parentID)
         var excluded: Set<UUID> = [folderID]
         var frontier = [folderID]
         while let parent = frontier.popLast() {
-            let children = store.folders.filter { $0.parentID == parent }.map(\.id)
+            let children = (childrenByParent[parent] ?? []).map(\.id)
             excluded.formUnion(children)
             frontier.append(contentsOf: children)
         }
@@ -413,7 +452,9 @@ private struct CompactPlayerBar: View {
             }
             .buttonStyle(.plain)
             .disabled(!canUsePrimaryControl)
+            .accessibilityIdentifier("compact-player.play")
             .accessibilityLabel(primaryLabel)
+            .accessibilityValue(identity.snapshot.isPlaying ? "正在播放" : "未播放")
             .help(primaryLabel)
         }
     }
@@ -449,7 +490,6 @@ private struct CompactPlayerBar: View {
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .disabled(!identity.snapshot.isPlayable)
         .accessibilityLabel("播放速度")
         .accessibilityValue(rateLabel)
         .help("切换播放速度")
@@ -543,7 +583,6 @@ private struct CompactPlaybackSlider: View {
             guard let optimisticTime, abs(currentTime - optimisticTime) < 0.5 else { return }
             self.optimisticTime = nil
         }
-        .onExitCommand(perform: cancelScrubbing)
     }
 
     private var validDuration: TimeInterval {
@@ -588,11 +627,6 @@ private struct CompactPlaybackSlider: View {
         }
     }
 
-    private func cancelScrubbing() {
-        guard isScrubbing else { return }
-        isScrubbing = false
-        optimisticTime = nil
-    }
 }
 
 /// Keeps library refreshes scoped to the library session instead of forwarding
@@ -741,30 +775,5 @@ private struct LibraryUnavailableView: View {
         }
         .padding(DesignMetrics.space24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-extension View {
-    func podPinErrorAlert(store: PodPinStore) -> some View {
-        alert(
-            "发生错误",
-            isPresented: Binding(
-                get: { store.userFacingError != nil },
-                set: { if !$0 { store.dismissError() } }
-            ),
-            presenting: store.userFacingError
-        ) { _ in
-            Button("复制错误信息") {
-                guard let error = store.userFacingError else { return }
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(
-                    "PodPin error \(error.errorID) [\(error.code.rawValue)]\n\(error.technicalReason)",
-                    forType: .string
-                )
-            }
-            Button("好") { store.dismissError() }
-        } message: { error in
-            Text("\(error.summary)\n\n错误 ID：\(error.errorID)\n\(error.recoverySuggestion)")
-        }
     }
 }

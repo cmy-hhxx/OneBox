@@ -7,6 +7,7 @@ OneBox 是一个面向单个本机用户的 macOS 工具箱。内置工具共享
 - 仅支持 Apple Silicon 和 macOS 15+。
 - 产品代码使用 Swift；UI 以 SwiftUI 为主，必要时使用 AppKit 和 Metal。
 - 工具由同一受信任作者维护，随应用静态编译和发布；不加载第三方或远程代码。
+- 主窗口默认 1048×648pt、保留最小尺寸并允许自由改变宽高；工具一级切换立即完成，次级页面和辅助检查器统一从右侧进入，辅助检查器默认收起并在首次明确打开时才安装。
 - 股票看盘只在被选中且内容挂载时访问本地数据和公开行情源；不提供常驻后台或独立桌面外壳。
 - PodPin 启动时不联网；用户发起的导入、在线播放、下载或重试可以访问公开内容源。
 
@@ -19,7 +20,7 @@ OneBox 是一个面向单个本机用户的 macOS 工具箱。内置工具共享
 ### ASCII 工坊
 
 - 导入 PNG、JPEG 或 SVG；文件上限为 50 MB。PNG/JPEG 声明尺寸每边不超过 16384px、总计不超过 64MP，解码后的最长边不超过 4096px。
-- 初次打开以 OneBox 品牌图作为默认素材；支持三种固定画布比例、七套配色、字符大小、密度、对比度、反色与透明背景、三种动画及强度，以及平移和缩放。
+- 初次打开以 OneBox 品牌图作为默认素材且保持静态；支持三种固定画布比例、七套配色、字符大小、密度、对比度、反色与透明背景、三种可显式开启的动画及强度，以及平移和缩放。
 - 导出固定尺寸、`time = 0` 的静态 PNG；不支持视频、动图、自定义输出尺寸或工程恢复。
 - 失败导入保留上一个有效素材。完整验证范围见 [UI 验收](docs/design-qa.md)。
 
@@ -37,6 +38,7 @@ OneBox 是一个面向单个本机用户的 macOS 工具箱。内置工具共享
 - 导入用户主动提供的 B 站、抖音、小宇宙和 Fireside 公开链接；B 站支持有序多分 P 选择。
 - 资料库保留收件箱、层级文件夹、最近导入、最近播放和已下载集合；重复内容会移动并刷新，不丢失原有身份、播放进度或离线媒体。
 - 支持在线或离线播放、持久待播队列、自动续播、15/30 秒跳转、五档速率、音量与输出设备、系统媒体键，以及只记录实际听过区间的进度恢复。
+- 资料库是根页面；导入和正在播放作为可返回的右推页面，待播队列使用原生右侧检查器。PodPin 不再提供独立设置页，播放速率在播放条和正在播放页直接调整。
 - 继续使用 `~/Library/Application Support/PodPin/` 和原 PodPin 偏好 suite，因此已有资料库无需复制；不要同时运行独立 PodPin 与 OneBox 中的 PodPin。
 - Debug 和测试构建提供内置 fixture；未打包外部媒体工具的构建支持在线播放。离线下载的 Release 产物还需按[媒体工具策略](Tools/README.md)获取并打包锁定的 `ffmpeg`、`ffprobe` 和暂留 `yt-dlp`。
 - 不支持账号、登录、私有或付费内容、普通多链接批量、云同步、目录订阅、剪贴板监听、transcript、独立菜单栏入口或全局浮动播放器。
@@ -74,6 +76,8 @@ xcodebuild -project OneBox.xcodeproj -scheme OneBox -configuration Release \
   -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/DerivedData build
 ./scripts/package-podpin-tools.sh .build/DerivedData/Build/Products/Release/OneBox.app
 ```
+
+三条 package benchmark 命令都会在 `.build/Logs` 写入原始日志，以及带运行环境元数据和 median/P95/max 的 JSON 报告；Release UI 性能计划由 Xcode 写入 xcresult。性能门槛与固定机执行方式见[工程规范](docs/engineering.md)，窗口、检查器、Reduce Motion 和辅助技术矩阵见 [UI 验收](docs/design-qa.md)。
 
 默认 `check` 不访问第三方内容页面；首次建立 SwiftPM 缓存时，Xcode 仍可能联网取得精确锁定的 GRDB 依赖。`--podpin-live-downloads` 会先运行唯一获准联网的媒体工具获取脚本，并只把 lock 选择且验证通过的路径交给 live tests。
 

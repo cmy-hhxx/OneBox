@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import OSLog
 
 struct StockWatchShutdownFailure: Error, Equatable, Sendable {
     let databasePath: String
@@ -221,6 +222,11 @@ struct StockWatchMountedRun {
 
 @MainActor
 final class StockWatchBootstrap: ObservableObject {
+    private static let performanceSignposter = OSSignposter(
+        subsystem: "com.cmy.OneBox",
+        category: "StockWatch"
+    )
+
     private enum RunRequest: Sendable {
         case retry
         case clearQuoteCache
@@ -317,6 +323,24 @@ final class StockWatchBootstrap: ObservableObject {
 
     func start(retryingShutdownFailure: Bool = false) async {
         guard mountedRun == nil, !isStarting, !Task.isCancelled else { return }
+        let firstContentInterval = Self.performanceSignposter.beginInterval(
+            "FirstContentReady"
+        )
+        var didResolveContent = false
+        defer {
+            if didResolveContent {
+                Self.performanceSignposter.endInterval(
+                    "FirstContentReady",
+                    firstContentInterval
+                )
+            } else {
+                Self.performanceSignposter.endInterval(
+                    "FirstContentReady",
+                    firstContentInterval,
+                    "cancelled"
+                )
+            }
+        }
         isStarting = true
         failure = nil
         defer { isStarting = false }
@@ -345,6 +369,7 @@ final class StockWatchBootstrap: ObservableObject {
                 databasePath: shutdownFailure.databasePath,
                 shutdownFailure: shutdownFailure
             )
+            didResolveContent = true
             return
         }
         guard !Task.isCancelled else {
@@ -376,6 +401,7 @@ final class StockWatchBootstrap: ObservableObject {
                 store: newStore,
                 preferences: preferences
             )
+            didResolveContent = true
         } catch {
             let cleanupFailure: StockWatchShutdownFailure?
             if let candidate {
@@ -411,6 +437,7 @@ final class StockWatchBootstrap: ObservableObject {
                     canClearQuoteCache: error is StockWatchStartupError
                 )
             }
+            didResolveContent = true
         }
     }
 

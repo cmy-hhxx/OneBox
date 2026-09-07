@@ -6,6 +6,72 @@ import XCTest
 
 final class PodPinStoreTests: XCTestCase {
     @MainActor
+    func testWarmResumePublishesCacheBeforeRefreshingInTheBackground() async throws {
+        let database = try MarketDatabase.inMemory()
+        let mediaRoot = temporaryDirectory()
+        let defaultsName = "PodPinStoreTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
+        defer {
+            defaults.removePersistentDomain(forName: defaultsName)
+            try? FileManager.default.removeItem(at: mediaRoot)
+        }
+
+        let item = try await database.insertItem(makeOnlineItem(contentID: "warm-resume"))
+        let store = PodPinStore(
+            preferences: AppPreferences(defaults: defaults),
+            databaseFactory: { database },
+            mediaStoreFactory: { try PodPinMediaStore(rootURL: mediaRoot) }
+        )
+        await store.start()
+        XCTAssertEqual(store.items.map(\.id), [item.id])
+
+        var refreshCount = 0
+        let refreshFinished = expectation(description: "Background refresh finished")
+        store.itemRefreshTestHook = { _ in refreshCount += 1 }
+        store.itemRefreshCompletionTestHook = { _ in refreshFinished.fulfill() }
+        store.suspendUI()
+        await store.resumeUI()
+
+        XCTAssertEqual(refreshCount, 0)
+        XCTAssertEqual(store.items.map(\.id), [item.id])
+        XCTAssertEqual(store.itemsPhase, .loaded(.recentlyImported))
+
+        await fulfillment(of: [refreshFinished], timeout: 1)
+        XCTAssertEqual(refreshCount, 1)
+        XCTAssertEqual(store.items.map(\.id), [item.id])
+    }
+
+    @MainActor
+    func testWarmRefreshFailureKeepsCachedContentAndReportsInlineError() async throws {
+        let database = try MarketDatabase.inMemory()
+        let mediaRoot = temporaryDirectory()
+        let defaultsName = "PodPinStoreWarmRefreshFailureTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
+        defer {
+            defaults.removePersistentDomain(forName: defaultsName)
+            try? FileManager.default.removeItem(at: mediaRoot)
+        }
+        let item = try await database.insertItem(makeOnlineItem(contentID: "cached"))
+        let store = PodPinStore(
+            preferences: AppPreferences(defaults: defaults),
+            databaseFactory: { database },
+            mediaStoreFactory: { try PodPinMediaStore(rootURL: mediaRoot) }
+        )
+        await store.start()
+        try await database.close()
+        let refreshFinished = expectation(description: "Failed refresh finished")
+        store.itemRefreshCompletionTestHook = { _ in refreshFinished.fulfill() }
+
+        store.suspendUI()
+        await store.resumeUI()
+        await fulfillment(of: [refreshFinished], timeout: 1)
+
+        XCTAssertEqual(store.items.map(\.id), [item.id])
+        XCTAssertEqual(store.itemsPhase, .loaded(.recentlyImported))
+        XCTAssertNotNil(store.userFacingError)
+    }
+
+    @MainActor
     func testSettingPlaybackRateUpdatesTheActiveControllerImmediately() throws {
         let defaultsName = "PodPinStoreTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
@@ -72,6 +138,46 @@ final class PodPinStoreTests: XCTestCase {
         await store.start()
 
         XCTAssertEqual(recorder.mainThreadValues(), [false, false])
+    }
+
+    @MainActor
+    func testReturningSurfaceRemainsVisibleWhenInitialSurfaceStartupTaskIsCancelled() async throws {
+        let database = try MarketDatabase.inMemory()
+        let mediaRoot = temporaryDirectory()
+        let defaultsName = "PodPinStoreStartupOwnershipTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
+        let factoryGate = SynchronousFactoryGate()
+        defer {
+            factoryGate.release()
+            defaults.removePersistentDomain(forName: defaultsName)
+            try? FileManager.default.removeItem(at: mediaRoot)
+        }
+        let store = PodPinStore(
+            preferences: AppPreferences(defaults: defaults),
+            databaseFactory: {
+                factoryGate.block()
+                return database
+            },
+            mediaStoreFactory: { try PodPinMediaStore(rootURL: mediaRoot) }
+        )
+
+        let initialSurface = Task { @MainActor in
+            await store.resumeUI()
+        }
+        await factoryGate.waitUntilBlocked()
+        store.suspendUI()
+        let returningSurface = Task { @MainActor in
+            await store.resumeUI()
+        }
+        try await Task.sleep(for: .milliseconds(10))
+
+        initialSurface.cancel()
+        factoryGate.release()
+        await returningSurface.value
+
+        XCTAssertEqual(store.startupPhase, .ready)
+        XCTAssertTrue(store.isUISurfaceVisibleForTesting)
+        await store.shutdown()
     }
 
     @MainActor
@@ -491,6 +597,58 @@ final class PodPinStoreTests: XCTestCase {
         XCTAssertEqual(store.downloadSession.bytesPerSecond, 1_500_000)
         _ = cancellable
         await importer.succeedDownload(contentID: item.contentID, attempt: 1)
+    }
+
+    @MainActor
+    func testDownloadProgressCoalescesBurstUpdates() async throws {
+        let database = try MarketDatabase.inMemory()
+        let mediaRoot = temporaryDirectory()
+        let defaultsName = "PodPinStoreTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
+        defer {
+            defaults.removePersistentDomain(forName: defaultsName)
+            try? FileManager.default.removeItem(at: mediaRoot)
+        }
+
+        let importer = GatedDownloadImporter()
+        let store = PodPinStore(
+            preferences: AppPreferences(defaults: defaults),
+            databaseFactory: { database },
+            mediaStoreFactory: { try PodPinMediaStore(rootURL: mediaRoot) },
+            importer: importer
+        )
+        let item = try await database.insertItem(makeOnlineItem(contentID: "progress-burst"))
+        await store.start()
+        store.startDownload(item)
+        await importer.waitUntilDownloadStarts(contentID: item.contentID, attempt: 1)
+
+        var publicationCount = 0
+        let completionPublication = expectation(description: "Completion publishes 100 percent")
+        let cancellable = store.downloadSession.$snapshot.dropFirst().sink { snapshot in
+            publicationCount += 1
+            if snapshot.fraction == 1 {
+                completionPublication.fulfill()
+            }
+        }
+        for index in 1...87 {
+            await importer.reportProgress(
+                DownloadProgressSnapshot(
+                    fraction: Double(index) / 100,
+                    bytesPerSecond: Double(index)
+                ),
+                contentID: item.contentID,
+                attempt: 1
+            )
+        }
+
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertLessThanOrEqual(publicationCount, 4)
+        XCTAssertEqual(store.downloadSession.progress, 0.87)
+
+        await importer.succeedDownload(contentID: item.contentID, attempt: 1)
+        await fulfillment(of: [completionPublication], timeout: 1)
+        XCTAssertLessThanOrEqual(publicationCount, 5)
+        _ = cancellable
     }
 
     @MainActor
@@ -978,6 +1136,29 @@ private actor CompletionProbe {
 
     func isCompleted() -> Bool {
         completed
+    }
+}
+
+private final class SynchronousFactoryGate: @unchecked Sendable {
+    private let blocked = DispatchSemaphore(value: 0)
+    private let releaseSemaphore = DispatchSemaphore(value: 0)
+
+    func block() {
+        blocked.signal()
+        releaseSemaphore.wait()
+    }
+
+    func waitUntilBlocked() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async { [blocked] in
+                blocked.wait()
+                continuation.resume()
+            }
+        }
+    }
+
+    func release() {
+        releaseSemaphore.signal()
     }
 }
 

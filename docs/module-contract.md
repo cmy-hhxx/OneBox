@@ -27,7 +27,7 @@ ToolRegistration(id: id, displayName: name) {
 
 ## UI
 
-宿主拥有窗口和导航，工具拥有内容与领域操作。两者均遵守 [设计规范](design.md)。未实现工具只显示“待接入”，不得提供无行为的控件或示例数据。
+宿主拥有可自由缩放的窗口和一级工具导航，工具拥有内容与领域操作。一级工具切换立即发生；工具内次级页面使用可逆的 trailing push/pop；辅助信息使用 DesignSystem 提供的原生 trailing inspector，任务型提交才使用 sheet。两者均遵守 [设计规范](design.md)。未实现工具只显示“待接入”，不得提供无行为的控件或示例数据。
 
 ## 新增工具
 

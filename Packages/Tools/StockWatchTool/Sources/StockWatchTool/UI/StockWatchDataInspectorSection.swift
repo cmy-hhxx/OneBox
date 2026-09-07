@@ -4,15 +4,32 @@ import SwiftUI
 
 @MainActor
 struct StockWatchDataInspectorSection: View {
-    @ObservedObject var store: MonitorStore
+    let store: MonitorStore
     @Bindable var preferences: StockWatchPreferences
     let copyText: (String) -> Bool
     let revealDirectory: (URL) -> Bool
+
+    private let quotePresentation: QuotePresentationSession
+    private let diagnosticsPresentation: DiagnosticsPresentationSession
 
     @Environment(\.designPalette) private var palette
     @State private var databasePathActionMessage: String?
     @State private var isRefreshingData = false
     @State private var isConfirmingCacheClear = false
+
+    init(
+        store: MonitorStore,
+        preferences: StockWatchPreferences,
+        copyText: @escaping (String) -> Bool,
+        revealDirectory: @escaping (URL) -> Bool
+    ) {
+        self.store = store
+        self.preferences = preferences
+        self.copyText = copyText
+        self.revealDirectory = revealDirectory
+        self.quotePresentation = store.quotePresentation
+        self.diagnosticsPresentation = store.diagnosticsPresentation
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.space12) {
@@ -46,7 +63,7 @@ struct StockWatchDataInspectorSection: View {
             )
             dataRow(
                 title: "缓存分钟数",
-                value: "\(store.quoteBarCount.formatted()) 分钟",
+                value: "\(diagnosticsPresentation.quoteBarCount.formatted()) 分钟",
                 systemImage: "clock.arrow.circlepath"
             )
 
@@ -88,21 +105,21 @@ struct StockWatchDataInspectorSection: View {
             Label("数据库路径", systemImage: "externaldrive")
                 .font(DesignTypography.metadata)
 
-            Text(store.databasePath.isEmpty ? "未打开" : store.databasePath)
+            Text(databasePathValue.isEmpty ? "未打开" : databasePathValue)
                 .font(DesignTypography.metadata)
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityLabel("数据库路径")
-                .accessibilityValue(store.databasePath)
+                .accessibilityValue(databasePathValue)
 
             HStack(spacing: DesignMetrics.space8) {
                 Button("复制路径", systemImage: "doc.on.doc", action: copyDatabasePath)
                 Button("显示目录", systemImage: "folder", action: revealDatabaseDirectory)
             }
             .buttonStyle(.bordered)
-            .disabled(store.databasePath.isEmpty)
+            .disabled(databasePathValue.isEmpty)
 
             if let databasePathActionMessage {
                 Text(databasePathActionMessage)
@@ -134,8 +151,14 @@ struct StockWatchDataInspectorSection: View {
     }
 
     private var lastRefreshText: String {
-        guard let lastRefresh = store.lastRefresh else { return tr("尚未刷新") }
+        guard let lastRefresh = quotePresentation.snapshot.lastRefresh else {
+            return tr("尚未刷新")
+        }
         return lastRefresh.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private var databasePathValue: String {
+        diagnosticsPresentation.databasePath
     }
 
     private func refreshData() {
@@ -149,14 +172,14 @@ struct StockWatchDataInspectorSection: View {
     }
 
     private func copyDatabasePath() {
-        guard !store.databasePath.isEmpty else { return }
-        let succeeded = copyText(store.databasePath)
+        guard !databasePathValue.isEmpty else { return }
+        let succeeded = copyText(databasePathValue)
         publishDatabasePathFeedback(succeeded ? "已复制数据库路径" : "复制数据库路径失败")
     }
 
     private func revealDatabaseDirectory() {
-        guard !store.databasePath.isEmpty else { return }
-        let directory = URL(fileURLWithPath: store.databasePath).deletingLastPathComponent()
+        guard !databasePathValue.isEmpty else { return }
+        let directory = URL(fileURLWithPath: databasePathValue).deletingLastPathComponent()
         let succeeded = revealDirectory(directory)
         publishDatabasePathFeedback(succeeded ? "已在 Finder 中显示目录" : "无法在 Finder 中显示目录")
     }

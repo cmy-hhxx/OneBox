@@ -9,15 +9,33 @@ enum AlertThresholdPresentation {
 
 @MainActor
 struct StockWatchAlertInspectorSection: View {
-    @ObservedObject var store: MonitorStore
+    let store: MonitorStore
     @Bindable var preferences: StockWatchPreferences
+
+    private let watchlistPresentation: WatchlistPresentationSession
+    private let alertPresentation: AlertPresentationSession
 
     @Environment(\.designPalette) private var palette
     @State private var isGeneratingTargets = false
     @State private var targetGenerationMessage: String?
     @State private var targetGenerationRequest = 0
+    @State private var thresholdPresentation: AlertThresholdPresentationSession
+
+    init(store: MonitorStore, preferences: StockWatchPreferences) {
+        self.store = store
+        self.preferences = preferences
+        self.watchlistPresentation = store.watchlistPresentation
+        self.alertPresentation = store.alertPresentation
+        _thresholdPresentation = State(
+            initialValue: AlertThresholdPresentationSession(
+                configuration: store.alertPresentation.configuration
+            )
+        )
+    }
 
     var body: some View {
+        @Bindable var thresholdPresentation = thresholdPresentation
+
         VStack(alignment: .leading, spacing: DesignMetrics.space12) {
             Text("价格提醒")
                 .font(DesignTypography.sectionTitle)
@@ -37,21 +55,23 @@ struct StockWatchAlertInspectorSection: View {
 
             VStack(alignment: .leading, spacing: DesignMetrics.space12) {
                 thresholdControl(
-                    title: store.alertConfiguration.basis == .percentage
+                    title: alertPresentation.configuration.basis == .percentage
                         ? "上涨超过"
                         : "目标上涨幅度",
                     systemImage: "arrow.up.right",
-                    value: alertConfigurationBinding(\.risingThreshold)
+                    value: $thresholdPresentation.risingThreshold,
+                    field: .rising
                 )
                 thresholdControl(
-                    title: store.alertConfiguration.basis == .percentage
+                    title: alertPresentation.configuration.basis == .percentage
                         ? "下跌超过"
                         : "目标下跌幅度",
                     systemImage: "arrow.down.right",
-                    value: alertConfigurationBinding(\.fallingThreshold)
+                    value: $thresholdPresentation.fallingThreshold,
+                    field: .falling
                 )
             }
-            .disabled(!store.alertConfiguration.isEnabled)
+            .disabled(!alertPresentation.configuration.isEnabled)
 
             Button(action: requestTargetGeneration) {
                 if isGeneratingTargets {
@@ -64,8 +84,8 @@ struct StockWatchAlertInspectorSection: View {
             .buttonStyle(.bordered)
             .disabled(
                 isGeneratingTargets
-                    || !store.alertConfiguration.isEnabled
-                    || store.instruments.isEmpty
+                    || !alertPresentation.configuration.isEnabled
+                    || watchlistPresentation.instruments.isEmpty
             )
 
             if let targetGenerationMessage {
@@ -94,12 +114,16 @@ struct StockWatchAlertInspectorSection: View {
             guard targetGenerationRequest > 0 else { return }
             await generateTargetsFromCurrentPrices()
         }
+        .onChange(of: alertPresentation.configuration) { _, configuration in
+            thresholdPresentation.synchronize(with: configuration)
+        }
     }
 
     private func thresholdControl(
         title: String,
         systemImage: String,
-        value: Binding<Double>
+        value: Binding<Double>,
+        field: AlertThresholdPresentationSession.Field
     ) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.space4) {
             HStack(spacing: DesignMetrics.space8) {
@@ -112,11 +136,24 @@ struct StockWatchAlertInspectorSection: View {
                     .foregroundStyle(palette.textSecondary)
             }
 
-            Slider(value: value, in: 0.5...15, step: 0.5)
-                .tint(palette.accent)
-                .controlSize(.small)
-                .accessibilityLabel(title)
-                .accessibilityValue(AlertThresholdPresentation.valueText(value.wrappedValue))
+            Slider(
+                value: value,
+                in: 0.5...15,
+                step: 0.5,
+                onEditingChanged: { isEditing in
+                    thresholdPresentation.editingChanged(
+                        isEditing,
+                        field: field,
+                        currentConfiguration: alertPresentation.configuration
+                    ) { configuration in
+                        store.updateAlertConfiguration(configuration)
+                    }
+                }
+            )
+            .tint(palette.accent)
+            .controlSize(.small)
+            .accessibilityLabel(title)
+            .accessibilityValue(AlertThresholdPresentation.valueText(value.wrappedValue))
         }
     }
 
@@ -146,9 +183,9 @@ struct StockWatchAlertInspectorSection: View {
         _ keyPath: WritableKeyPath<AlertConfiguration, Value>
     ) -> Binding<Value> {
         Binding(
-            get: { store.alertConfiguration[keyPath: keyPath] },
+            get: { alertPresentation.configuration[keyPath: keyPath] },
             set: { value in
-                var configuration = store.alertConfiguration
+                var configuration = alertPresentation.configuration
                 configuration[keyPath: keyPath] = value
                 store.updateAlertConfiguration(configuration)
             }

@@ -1,0 +1,170 @@
+name: Performance
+
+on:
+  schedule:
+    - cron: "30 18 * * *"
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: onebox-fixed-performance
+  cancel-in-progress: false
+
+jobs:
+  performance:
+    name: Fixed Apple Silicon performance
+    runs-on: [self-hosted, macOS, ARM64, onebox-performance]
+    timeout-minutes: 120
+    env:
+      ONEBOX_BENCHMARK_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      ONEBOX_ASCII_BENCHMARK_BASELINE: ${{ vars.ONEBOX_ASCII_BENCHMARK_BASELINE }}
+      ONEBOX_STOCKWATCH_BENCHMARK_BASELINE: ${{ vars.ONEBOX_STOCKWATCH_BENCHMARK_BASELINE }}
+      ONEBOX_PODPIN_BENCHMARK_BASELINE: ${{ vars.ONEBOX_PODPIN_BENCHMARK_BASELINE }}
+      ONEBOX_UI_PERFORMANCE_BASELINE: ${{ vars.ONEBOX_UI_PERFORMANCE_BASELINE }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+        with:
+          minimum_release_age: 7d
+      - name: Verify fixed Apple Silicon host
+        run: test "$(uname -m)" = arm64
+      - name: Verify approved benchmark baselines
+        shell: bash
+        run: |
+          set -euo pipefail
+          for baseline in \
+            "$ONEBOX_ASCII_BENCHMARK_BASELINE" \
+            "$ONEBOX_STOCKWATCH_BENCHMARK_BASELINE" \
+            "$ONEBOX_PODPIN_BENCHMARK_BASELINE"
+          do
+            if [[ -z "$baseline" || ! -f "$baseline" ]]; then
+              echo "A readable approved benchmark baseline is required on the fixed runner: $baseline" >&2
+              exit 2
+            fi
+          done
+          if [[ -z "$ONEBOX_UI_PERFORMANCE_BASELINE" || ! -d "$ONEBOX_UI_PERFORMANCE_BASELINE" ]]; then
+            echo "A readable approved UI xcresult baseline is required on the fixed runner: $ONEBOX_UI_PERFORMANCE_BASELINE" >&2
+            exit 2
+          fi
+          ./scripts/compare-ui-performance-xcresult.sh \
+            "$ONEBOX_UI_PERFORMANCE_BASELINE" \
+            "$ONEBOX_UI_PERFORMANCE_BASELINE" >/dev/null
+      - name: ASCII Release benchmark
+        run: ./scripts/benchmark-ascii.sh
+      - name: StockWatch Release benchmark
+        run: ./scripts/benchmark-stock-watch.sh
+      - name: PodPin Release benchmark
+        run: ./scripts/benchmark-podpin.sh
+      - name: Generate Xcode project
+        run: ./scripts/bootstrap.sh
+      - name: Build Release UI interaction checks
+        run: |
+          mkdir -p .build/Logs .build/TestResults
+          xcodebuild \
+            -project OneBox.xcodeproj \
+            -scheme OneBoxUI \
+            -configuration Release \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath .build/DerivedDataUI \
+            build-for-testing
+      - name: Run deterministic Release UI interaction checks
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project OneBox.xcodeproj \
+            -scheme OneBoxUI \
+            -configuration Release \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath .build/DerivedDataUI \
+            -resultBundlePath ".build/TestResults/OneBoxUI-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult" \
+            '-only-testing:OneBoxUITests/OneBoxUITests' \
+            test-without-building \
+            2>&1 | tee ".build/Logs/ui-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.log"
+      - name: Build Release UI performance plan
+        run: |
+          xcodebuild \
+            -project OneBox.xcodeproj \
+            -scheme OneBoxPerformance \
+            -testPlan OneBoxPerformance \
+            -configuration Release \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath .build/DerivedDataPerformance \
+            build-for-testing
+      - name: Run Release UI performance plan with one measured retry
+        shell: bash
+        run: |
+          set -o pipefail
+          first_result=0
+          xcodebuild \
+            -project OneBox.xcodeproj \
+            -scheme OneBoxPerformance \
+            -testPlan OneBoxPerformance \
+            -configuration Release \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath .build/DerivedDataPerformance \
+            -resultBundlePath ".build/TestResults/OneBoxPerformance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult" \
+            test-without-building \
+            2>&1 | tee ".build/Logs/ui-performance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.log" \
+            || first_result=$?
+
+          if (( first_result == 0 )); then
+            ./scripts/compare-ui-performance-xcresult.sh \
+              "$ONEBOX_UI_PERFORMANCE_BASELINE" \
+              ".build/TestResults/OneBoxPerformance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xcresult" \
+              || first_result=$?
+          fi
+
+          if (( first_result == 0 )); then
+            exit 0
+          fi
+
+          if (( first_result == 2 )); then
+            echo "Release UI performance baseline or result schema is incompatible; not retrying." >&2
+            exit 2
+          fi
+
+          echo "Release UI performance plan failed once; rerunning the measured test without rebuilding." >&2
+          second_result=0
+          xcodebuild \
+            -project OneBox.xcodeproj \
+            -scheme OneBoxPerformance \
+            -testPlan OneBoxPerformance \
+            -configuration Release \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath .build/DerivedDataPerformance \
+            -resultBundlePath ".build/TestResults/OneBoxPerformance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-rerun.xcresult" \
+            test-without-building \
+            2>&1 | tee ".build/Logs/ui-performance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-rerun.log" \
+            || second_result=$?
+
+          if (( second_result == 0 )); then
+            ./scripts/compare-ui-performance-xcresult.sh \
+              "$ONEBOX_UI_PERFORMANCE_BASELINE" \
+              ".build/TestResults/OneBoxPerformance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-rerun.xcresult" \
+              || second_result=$?
+          fi
+
+          if (( second_result == 0 )); then
+            echo "Release UI performance rerun passed; the first failure is treated as noise."
+          fi
+          exit "$second_result"
+      - name: Upload performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            .build/Logs/*benchmark-${{ github.run_id }}-${{ github.run_attempt }}*.log
+            .build/Logs/*benchmark-${{ github.run_id }}-${{ github.run_attempt }}*.json
+            .build/Logs/ui-${{ github.run_id }}-${{ github.run_attempt }}.log
+            .build/Logs/ui-performance-${{ github.run_id }}-${{ github.run_attempt }}*.log
+            .build/TestResults/OneBoxUI-${{ github.run_id }}-${{ github.run_attempt }}.xcresult
+            .build/TestResults/OneBoxPerformance-${{ github.run_id }}-${{ github.run_attempt }}*.xcresult

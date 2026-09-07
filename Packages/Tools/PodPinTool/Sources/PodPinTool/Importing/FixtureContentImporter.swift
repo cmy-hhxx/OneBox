@@ -4,6 +4,7 @@ import Foundation
 /// It is intentionally opt-in: production URLs still flow to platform adapters.
 actor FixtureContentImporter: ContentImporting {
     static let sampleURL = URL(string: "https://fixture.podpin.local/welcome")!
+    static let collectionSampleURL = URL(string: "https://fixture.podpin.local/collection")!
 
     private let audioURL: URL
 
@@ -13,6 +14,25 @@ actor FixtureContentImporter: ContentImporting {
 
     func probe(url: URL, attempt: ImportAttempt) async throws -> ImportDiscovery {
         guard url.host == Self.sampleURL.host else { throw ContentImportError.unsupportedURL }
+        if url.path == Self.collectionSampleURL.path {
+            let items = (1...3).map { index in
+                ImportedAudioMetadata(
+                    platform: .fixture,
+                    contentID: "collection-part-\(index)",
+                    sourceURL: Self.collectionSampleURL,
+                    title: "PodPin 示例分段 \(index)",
+                    author: "PodPin",
+                    artworkURL: nil,
+                    duration: 8
+                )
+            }
+            return ImportDiscovery(
+                sourceURL: Self.collectionSampleURL,
+                groupTitle: "PodPin 示例合集",
+                primaryItem: items[0],
+                remainingItems: Array(items.dropFirst())
+            )
+        }
         let metadata = ImportedAudioMetadata(
             platform: .fixture,
             contentID: "welcome",

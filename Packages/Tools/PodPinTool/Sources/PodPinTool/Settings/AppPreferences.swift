@@ -6,20 +6,7 @@ import Foundation
 @MainActor
 final class AppPreferences: ObservableObject {
     static let supportedPlaybackRates: [Double] = [0.75, 1, 1.25, 1.5, 2]
-    nonisolated static let nowPlayingContentOpacityRange = 0.45...1.0
     nonisolated static let playbackVolumeRange = 0.0...1.0
-
-    @Published var nowPlayingContentOpacity: Double {
-        didSet {
-            let normalized = Self.clamped(
-                nowPlayingContentOpacity, to: Self.nowPlayingContentOpacityRange)
-            guard normalized == nowPlayingContentOpacity else {
-                nowPlayingContentOpacity = normalized
-                return
-            }
-            persist(normalized, key: Keys.nowPlayingContentOpacity)
-        }
-    }
 
     @Published var playbackRate: Double {
         didSet {
@@ -52,10 +39,6 @@ final class AppPreferences: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        nowPlayingContentOpacity = Self.clamped(
-            Self.double(defaults, key: Keys.nowPlayingContentOpacity, fallback: 1),
-            to: Self.nowPlayingContentOpacityRange
-        )
         playbackRate = Self.closestSupportedPlaybackRate(
             to: Self.double(defaults, key: Keys.playbackRate, fallback: 1))
         playbackVolume = Self.clamped(
@@ -104,7 +87,6 @@ final class AppPreferences: ObservableObject {
     }
 
     private enum Keys {
-        static let nowPlayingContentOpacity = "podpin.nowPlayingContentOpacity"
         static let playbackRate = "podpin.playbackRate"
         static let playbackVolume = "podpin.playbackVolume"
         static let lastLibraryCollection = "podpin.lastLibraryCollection"

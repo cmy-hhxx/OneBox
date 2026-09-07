@@ -1,6 +1,7 @@
 import Darwin
 import Metal
 import XCTest
+import os
 
 @testable import AsciiArtTool
 
@@ -22,20 +23,49 @@ final class AsciiPerformanceTests: XCTestCase {
             let cache = AsciiRenderCache(
                 deviceProvider: TestAsciiMetalDeviceProvider()
             )
-            _ = try await cache.preparedPipeline()
-
-            let clock = ContinuousClock()
-            let start = clock.now
-            _ = try await AsciiPNGExporter.render(
-                cache: cache,
+            let pipeline = try await cache.preparedPipeline()
+            _ = try await AsciiPNGExporter.renderPrepared(
+                pipeline: pipeline,
                 source: source,
                 snapshot: snapshot
             )
-            let elapsed = start.duration(to: clock.now)
+            var durations: [TimeInterval] = []
+            let options = XCTMeasureOptions()
+            options.iterationCount = 30
 
-            XCTAssertLessThanOrEqual(elapsed, .seconds(2))
+            measure(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: options) {
+                let startedAt = ProcessInfo.processInfo.systemUptime
+                waitForAsyncOperation {
+                    _ = try await AsciiPNGExporter.renderPrepared(
+                        pipeline: pipeline,
+                        source: source,
+                        snapshot: snapshot
+                    )
+                }
+                durations.append(ProcessInfo.processInfo.systemUptime - startedAt)
+            }
+
+            XCTAssertLessThanOrEqual(durations.max() ?? .infinity, 2)
             XCTAssertLessThanOrEqual(try currentPhysicalFootprint(), 250 * 1024 * 1024)
         #endif
+    }
+
+    private func waitForAsyncOperation(
+        _ operation: @escaping @Sendable () async throws -> Void
+    ) {
+        let semaphore = DispatchSemaphore(value: 0)
+        let result = OSAllocatedUnfairLock<Result<Void, Error>?>(initialState: nil)
+        Task.detached {
+            do {
+                try await operation()
+                result.withLock { $0 = .success(()) }
+            } catch {
+                result.withLock { $0 = .failure(error) }
+            }
+            semaphore.signal()
+        }
+        XCTAssertEqual(semaphore.wait(timeout: .now() + 10), .success)
+        XCTAssertNoThrow(try result.withLock { try $0?.get() })
     }
 
     private func currentPhysicalFootprint() throws -> UInt64 {

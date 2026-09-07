@@ -4,15 +4,26 @@ import SwiftUI
 
 public struct HostView: View {
     let catalog: ToolCatalog
+    let onInitialContentReady: @MainActor @Sendable () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selection: ToolID?
     @State private var isSidebarVisible = true
+    @State private var hasInitialContentReady = false
+    @State private var performanceTrace: HostPerformanceTrace
 
-    public init(catalog: ToolCatalog) {
+    public init(
+        catalog: ToolCatalog,
+        onInitialContentReady: @escaping @MainActor @Sendable () -> Void = {}
+    ) {
         self.catalog = catalog
-        _selection = State(initialValue: catalog.registrations.first?.id)
+        self.onInitialContentReady = onInitialContentReady
+        let initialSelection = catalog.registrations.first?.id
+        _selection = State(initialValue: initialSelection)
+        _performanceTrace = State(
+            initialValue: HostPerformanceTrace(initialToolID: initialSelection)
+        )
     }
 
     public var body: some View {
@@ -22,7 +33,8 @@ public struct HostView: View {
             if isSidebarVisible {
                 HostSidebar(
                     catalog: catalog,
-                    selection: $selection,
+                    selection: selection,
+                    onSelect: activateTool,
                     onCollapse: toggleSidebar
                 )
                 .frame(width: DesignMetrics.sidebarWidth)
@@ -30,7 +42,11 @@ public struct HostView: View {
                 .transition(.move(edge: .leading))
             }
 
-            ToolDetailView(registration: catalog.registration(for: selection))
+            ToolDetailView(
+                registration: catalog.registration(for: selection),
+                onContentPresented: performanceTrace.contentDidAppear,
+                onContentReady: contentDidBecomeReady
+            )
         }
         .overlay(alignment: .topLeading) {
             if !isSidebarVisible {
@@ -51,6 +67,16 @@ public struct HostView: View {
         .environment(\.designPalette, palette)
         .tint(palette.accent)
         .background(palette.background)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(
+            hasInitialContentReady ? "onebox.main.ready" : "onebox.main.loading"
+        )
+    }
+
+    private func activateTool(_ toolID: ToolID) {
+        guard selection != toolID else { return }
+        performanceTrace.beginActivation(for: toolID)
+        selection = toolID
     }
 
     private func toggleSidebar() {
@@ -61,6 +87,13 @@ public struct HostView: View {
                 isSidebarVisible.toggle()
             }
         }
+    }
+
+    private func contentDidBecomeReady(for toolID: ToolID) {
+        guard performanceTrace.contentDidBecomeReady(for: toolID) else { return }
+        guard !hasInitialContentReady else { return }
+        hasInitialContentReady = true
+        onInitialContentReady()
     }
 }
 

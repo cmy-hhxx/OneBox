@@ -18,7 +18,7 @@ enum AsciiPNGExporter {
     }
 
     @concurrent
-    private static func renderPrepared(
+    static func renderPrepared(
         pipeline: AsciiMetalPipeline,
         source: AsciiSource,
         snapshot: AsciiRenderSnapshot

@@ -3,17 +3,34 @@ import SwiftUI
 
 @MainActor
 struct MarketMonitorView: View {
-    @ObservedObject var store: MonitorStore
+    let store: MonitorStore
     @Binding var selectedInstrumentID: InstrumentID?
     let openAddInstrument: () -> Void
 
+    private let watchlistPresentation: WatchlistPresentationSession
+    private let quotePresentation: QuotePresentationSession
+    private let diagnosticsPresentation: DiagnosticsPresentationSession
+
     @Environment(\.designPalette) private var palette
+
+    init(
+        store: MonitorStore,
+        selectedInstrumentID: Binding<InstrumentID?>,
+        openAddInstrument: @escaping () -> Void
+    ) {
+        self.store = store
+        _selectedInstrumentID = selectedInstrumentID
+        self.openAddInstrument = openAddInstrument
+        self.watchlistPresentation = store.watchlistPresentation
+        self.quotePresentation = store.quotePresentation
+        self.diagnosticsPresentation = store.diagnosticsPresentation
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             statusBanners
 
-            if store.instruments.isEmpty {
+            if watchlistPresentation.instruments.isEmpty {
                 emptyState
             } else {
                 instrumentList
@@ -30,7 +47,7 @@ struct MarketMonitorView: View {
 
     @ViewBuilder
     private var statusBanners: some View {
-        if let storageError = store.storageError {
+        if let storageError = diagnosticsPresentation.storageError {
             MarketErrorBanner(
                 title: "本地存储需要处理",
                 message: storageError,
@@ -40,7 +57,7 @@ struct MarketMonitorView: View {
             )
         }
 
-        if let sourceError = store.sourceError {
+        if let sourceError = quotePresentation.snapshot.sourceError {
             MarketErrorBanner(
                 title: "行情刷新失败",
                 message: sourceError,
@@ -54,8 +71,8 @@ struct MarketMonitorView: View {
 
     private var instrumentList: some View {
         List(selection: $selectedInstrumentID) {
-            ForEach(store.instruments) { instrument in
-                let monitored = store.monitoredInstrument(for: instrument.id)
+            ForEach(watchlistPresentation.instruments) { instrument in
+                let monitored = quotePresentation.snapshot.monitoredInstruments[instrument.id]
                 InstrumentRowView(
                     instrument: instrument,
                     quote: monitored?.quote,
@@ -84,8 +101,8 @@ struct MarketMonitorView: View {
             \.defaultMinListRowHeight,
             DesignMetrics.dataRowHeight + DesignMetrics.space16
         )
-        .disabled(store.isWatchlistMutating)
-        .accessibilityLabel("观察列表，共 \(store.instruments.count) 个标的")
+        .disabled(watchlistPresentation.isMutating)
+        .accessibilityLabel("观察列表，共 \(watchlistPresentation.instruments.count) 个标的")
     }
 
     private var emptyState: some View {

@@ -15,12 +15,12 @@ final class WorkspacePerformanceTests: XCTestCase {
         try await measureFirstRender(instrumentCount: 100)
     }
 
-    func testTenInstrumentWorkspaceUpdateBaseline() async throws {
-        try await measureUpdates(instrumentCount: 10)
+    func testTenInstrumentWorkspaceQuoteBatchUpdateBaseline() async throws {
+        try await measureQuoteBatchUpdates(instrumentCount: 10)
     }
 
-    func testHundredInstrumentWorkspaceUpdateBaseline() async throws {
-        try await measureUpdates(instrumentCount: 100)
+    func testHundredInstrumentWorkspaceQuoteBatchUpdateBaseline() async throws {
+        try await measureQuoteBatchUpdates(instrumentCount: 100)
     }
 
     private let metrics: [XCTMetric] = [
@@ -30,40 +30,66 @@ final class WorkspacePerformanceTests: XCTestCase {
 
     private var options: XCTMeasureOptions {
         let options = XCTMeasureOptions()
-        options.iterationCount = 3
+        options.iterationCount = 30
         return options
     }
 
     private func measureFirstRender(instrumentCount: Int) async throws {
         let fixture = try await makeFixture(instrumentCount: instrumentCount)
+        autoreleasepool {
+            let warmupHost = makeHost(fixture: fixture)
+            warmupHost.layoutSubtreeIfNeeded()
+        }
+        var durations: [TimeInterval] = []
 
         measure(metrics: metrics, options: options) {
-            autoreleasepool {
-                let host = makeHost(fixture: fixture)
-                host.layoutSubtreeIfNeeded()
-                XCTAssertGreaterThan(host.fittingSize.height, 0)
+            StockWatchPerformanceBudget.recordInteraction(in: &durations) {
+                autoreleasepool {
+                    let host = makeHost(fixture: fixture)
+                    host.layoutSubtreeIfNeeded()
+                    XCTAssertGreaterThan(host.fittingSize.height, 0)
+                }
             }
         }
+        StockWatchPerformanceBudget.assertInteractionP95(durations)
 
         let shutdownFailure = await fixture.store.shutdown()
         XCTAssertNil(shutdownFailure)
         fixture.removeDefaults()
     }
 
-    private func measureUpdates(instrumentCount: Int) async throws {
+    private func measureQuoteBatchUpdates(instrumentCount: Int) async throws {
         let fixture = try await makeFixture(instrumentCount: instrumentCount)
         let host = makeHost(fixture: fixture)
         host.layoutSubtreeIfNeeded()
+        let batch = QuoteRefreshBatch(
+            outcomes: fixture.store.instruments.enumerated().map { index, instrument in
+                QuoteRefreshOutcome(
+                    instrument: instrument,
+                    result: .updated(
+                        Self.snapshot(for: instrument, offset: Double(index) + 0.25),
+                        storageError: nil
+                    )
+                )
+            }
+        )
+        fixture.store.applyRefreshBatchForTesting(batch)
+        host.layoutSubtreeIfNeeded()
+        var durations: [TimeInterval] = []
 
         measure(metrics: metrics, options: options) {
-            fixture.store.dismissActiveAlert()
-            host.layoutSubtreeIfNeeded()
-            for index in 0..<20 {
-                fixture.store.testAlert(index.isMultiple(of: 2) ? .rising : .falling)
+            StockWatchPerformanceBudget.recordInteraction(in: &durations) {
+                fixture.store.applyRefreshBatchForTesting(batch)
                 host.layoutSubtreeIfNeeded()
+                XCTAssertEqual(
+                    fixture.store.instruments.count(where: {
+                        fixture.store.monitoredInstrument(for: $0.id)?.status == .live
+                    }),
+                    instrumentCount
+                )
             }
-            XCTAssertNotNil(fixture.store.activeAlert)
         }
+        StockWatchPerformanceBudget.assertInteractionP95(durations)
 
         let shutdownFailure = await fixture.store.shutdown()
         XCTAssertNil(shutdownFailure)

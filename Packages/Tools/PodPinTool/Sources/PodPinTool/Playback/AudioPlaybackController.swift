@@ -34,9 +34,15 @@ enum PlaybackPhase: Equatable {
 final class AudioPlaybackController: NSObject, ObservableObject {
     typealias State = PlaybackPhase
 
+    private enum PlaybackStartOutcome {
+        case audible
+        case cancelled
+        case failed
+    }
+
     private static let performanceSignposter = OSSignposter(
-        subsystem: "io.github.cmy-hhxx.podpin",
-        category: "playback.performance"
+        subsystem: "com.cmy.OneBox",
+        category: "PodPin"
     )
 
     @Published private(set) var state: PlaybackPhase = .idle
@@ -68,8 +74,14 @@ final class AudioPlaybackController: NSObject, ObservableObject {
     private var shouldAutoplayWhenReady = false
     private var didEmitPlaybackFinished = false
     private var startupInterval: OSSignpostIntervalState?
+    private var startupItemID: UUID?
+    private var startupRequestToken: UUID?
     private var lastAudibleTime: TimeInterval?
     private var isSeeking = false
+
+    #if DEBUG || PODPIN_TESTING
+        private(set) var cancelledPlaybackStartCount = 0
+    #endif
 
     override convenience init() {
         self.init(playerFactory: { AVPlayer(playerItem: $0) })
@@ -95,7 +107,12 @@ final class AudioPlaybackController: NSObject, ObservableObject {
             captureCurrentAudibleTime(using: player)
         }
         persistPosition(force: true)
-        tearDownPlayer()
+        let preservesStartupInterval =
+            autoplay && startupInterval != nil && startupItemID == item.id
+        tearDownPlayer(preservingStartupInterval: preservesStartupInterval)
+        if autoplay, !preservesStartupInterval {
+            _ = beginPlaybackStart(for: item.id)
+        }
         currentItem = item
         currentTime = 0
         duration = item.duration ?? 0
@@ -120,8 +137,6 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         self.player = player
         notifyOutputChanged()
         let itemID = item.id
-        startupInterval = Self.performanceSignposter.beginInterval("audio.startup")
-
         statusObservation = playerItem.observe(\.status, options: [.initial, .new]) {
             [weak self, weak player, weak playerItem] observedItem, _ in
             Task { @MainActor [weak self] in
@@ -222,7 +237,7 @@ final class AudioPlaybackController: NSObject, ObservableObject {
                 self.currentTime = self.duration
                 self.lastAudibleTime = nil
                 self.state = .finished
-                self.endStartupInterval()
+                self.endStartupInterval(.audible)
                 self.persistPosition(force: true)
                 self.onPlaybackFinished?(itemID)
                 self.notifyStateChanged()
@@ -231,7 +246,8 @@ final class AudioPlaybackController: NSObject, ObservableObject {
     }
 
     func play() {
-        guard let player, player.currentItem != nil, currentItem != nil else { return }
+        guard let player, player.currentItem != nil, let currentItem else { return }
+        beginPlaybackStartIfNeeded(for: currentItem.id)
         if state == .finished {
             didEmitPlaybackFinished = false
             shouldAutoplayWhenReady = true
@@ -253,6 +269,7 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         if state != .finished {
             state = .paused
         }
+        endStartupInterval(.cancelled)
         persistPosition(force: true)
         notifyStateChanged()
     }
@@ -390,7 +407,7 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         }
         lastAudibleTime = nil
         state = .failed(message)
-        endStartupInterval()
+        endStartupInterval(.failed)
         onPlaybackFailed?(itemID, message, statusCode)
         notifyStateChanged()
     }
@@ -432,7 +449,35 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         return min(max(time.isFinite ? time : 0, 0), maximum)
     }
 
-    private func tearDownPlayer() {
+    @discardableResult
+    func beginPlaybackStart(for itemID: UUID) -> UUID {
+        endStartupInterval(.cancelled)
+        let requestToken = UUID()
+        startupItemID = itemID
+        startupRequestToken = requestToken
+        startupInterval = Self.performanceSignposter.beginInterval("PlaybackStart")
+        return requestToken
+    }
+
+    @discardableResult
+    private func beginPlaybackStartIfNeeded(for itemID: UUID) -> UUID {
+        if startupItemID == itemID,
+            startupInterval != nil,
+            let startupRequestToken
+        {
+            return startupRequestToken
+        }
+        return beginPlaybackStart(for: itemID)
+    }
+
+    @discardableResult
+    func cancelPlaybackStart(_ requestToken: UUID) -> Bool {
+        guard startupRequestToken == requestToken else { return false }
+        endStartupInterval(.cancelled)
+        return true
+    }
+
+    private func tearDownPlayer(preservingStartupInterval: Bool = false) {
         if let timeObserver, let player {
             player.removeTimeObserver(timeObserver)
         }
@@ -449,7 +494,9 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         endObserver = nil
         player?.pause()
         player = nil
-        endStartupInterval()
+        if !preservingStartupInterval {
+            endStartupInterval(.cancelled)
+        }
         notifyOutputChanged()
         shouldAutoplayWhenReady = false
         lastAudibleTime = nil
@@ -477,7 +524,7 @@ final class AudioPlaybackController: NSObject, ObservableObject {
                 ? nil
                 : clampedTime(player.currentTime().secondsIfFinite ?? currentTime)
             Self.performanceSignposter.emitEvent("audio.audible")
-            endStartupInterval()
+            endStartupInterval(.audible)
             notifyStateChanged()
         case .waitingToPlayAtSpecifiedRate:
             guard state != .buffering else { return }
@@ -492,10 +539,30 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         }
     }
 
-    private func endStartupInterval() {
+    private func endStartupInterval(_ outcome: PlaybackStartOutcome) {
         guard let startupInterval else { return }
-        Self.performanceSignposter.endInterval("audio.startup", startupInterval)
+        switch outcome {
+        case .audible:
+            Self.performanceSignposter.endInterval("PlaybackStart", startupInterval)
+        case .cancelled:
+            #if DEBUG || PODPIN_TESTING
+                cancelledPlaybackStartCount += 1
+            #endif
+            Self.performanceSignposter.endInterval(
+                "PlaybackStart",
+                startupInterval,
+                "cancelled"
+            )
+        case .failed:
+            Self.performanceSignposter.endInterval(
+                "PlaybackStart",
+                startupInterval,
+                "failed"
+            )
+        }
         self.startupInterval = nil
+        startupItemID = nil
+        startupRequestToken = nil
     }
 }
 

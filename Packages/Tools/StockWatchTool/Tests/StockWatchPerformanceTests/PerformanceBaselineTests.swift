@@ -17,12 +17,17 @@ final class PerformanceBaselineTests: XCTestCase {
         let instrument = Instrument.initialWatchlist[0]
         try await database.replaceWatchlist(with: [instrument])
         let snapshot = Self.snapshot(for: instrument, barCount: 240, dayOffset: 0)
+        _ = try await database.saveQuote(snapshot, for: instrument)
+        var durations: [TimeInterval] = []
 
         measure(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: options) {
-            waitForAsyncOperation {
-                _ = try await database.saveQuote(snapshot, for: instrument)
+            StockWatchPerformanceBudget.recordInteraction(in: &durations) {
+                waitForAsyncOperation {
+                    _ = try await database.saveQuote(snapshot, for: instrument)
+                }
             }
         }
+        StockWatchPerformanceBudget.assertInteractionP95(durations)
     }
 
     func testOpeningBoundedCacheAfterDayTransitionsBaseline() async throws {
@@ -48,14 +53,18 @@ final class PerformanceBaselineTests: XCTestCase {
         let barCount = try await reopened.quoteBarCount()
         XCTAssertEqual(barCount, 240)
         try await reopened.close()
+        var durations: [TimeInterval] = []
 
         measure(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: options) {
-            waitForAsyncOperation {
-                let reopened = try MarketDatabase.open(atPath: path)
-                _ = try await reopened.loadLatestQuotes(for: [instrument])
-                try await reopened.close()
+            StockWatchPerformanceBudget.recordInteraction(in: &durations) {
+                waitForAsyncOperation {
+                    let reopened = try MarketDatabase.open(atPath: path)
+                    _ = try await reopened.loadLatestQuotes(for: [instrument])
+                    try await reopened.close()
+                }
             }
         }
+        StockWatchPerformanceBudget.assertInteractionP95(durations)
     }
 
     func testOpeningHundredInstrumentCacheBaseline() async throws {
@@ -77,15 +86,23 @@ final class PerformanceBaselineTests: XCTestCase {
             )
         }
         try await database.close()
+        let warmupDatabase = try MarketDatabase.open(atPath: path)
+        let warmupSnapshots = try await warmupDatabase.loadLatestQuotes(for: instruments)
+        XCTAssertEqual(warmupSnapshots.count, instruments.count)
+        try await warmupDatabase.close()
+        var durations: [TimeInterval] = []
 
         measure(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: options) {
-            waitForAsyncOperation {
-                let reopened = try MarketDatabase.open(atPath: path)
-                let snapshots = try await reopened.loadLatestQuotes(for: instruments)
-                XCTAssertEqual(snapshots.count, instruments.count)
-                try await reopened.close()
+            StockWatchPerformanceBudget.recordInteraction(in: &durations) {
+                waitForAsyncOperation {
+                    let reopened = try MarketDatabase.open(atPath: path)
+                    let snapshots = try await reopened.loadLatestQuotes(for: instruments)
+                    XCTAssertEqual(snapshots.count, instruments.count)
+                    try await reopened.close()
+                }
             }
         }
+        StockWatchPerformanceBudget.assertInteractionP95(durations)
     }
 
     private func measureRefresh(instrumentCount: Int) async throws {
@@ -103,17 +120,22 @@ final class PerformanceBaselineTests: XCTestCase {
             database: database,
             maximumConcurrentRequests: 6
         )
+        _ = await coordinator.refresh(instruments: instruments, currentQuotes: [:])
+        var durations: [TimeInterval] = []
 
         measure(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: options) {
-            waitForAsyncOperation {
-                _ = await coordinator.refresh(instruments: instruments, currentQuotes: [:])
+            StockWatchPerformanceBudget.recordInteraction(in: &durations) {
+                waitForAsyncOperation {
+                    _ = await coordinator.refresh(instruments: instruments, currentQuotes: [:])
+                }
             }
         }
+        StockWatchPerformanceBudget.assertInteractionP95(durations)
     }
 
     private var options: XCTMeasureOptions {
         let options = XCTMeasureOptions()
-        options.iterationCount = 3
+        options.iterationCount = 30
         return options
     }
 
@@ -167,26 +189,18 @@ final class PerformanceBaselineTests: XCTestCase {
 final class ChartPerformanceBaselineTests: XCTestCase {
     func testTwoThousandPointChartPreparationBaseline() {
         let bars = Self.chartBars(count: 2_000)
+        let warmup = IntradayChartPreparation(
+            points: bars,
+            market: .aShare,
+            dayOpen: 100,
+            previousClose: 100,
+            showReviewMarkers: true
+        )
+        XCTAssertEqual(warmup.points.count, bars.count)
+        var durations: [TimeInterval] = []
 
         measure(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: options) {
-            let preparation = IntradayChartPreparation(
-                points: bars,
-                market: .aShare,
-                dayOpen: 100,
-                previousClose: 100,
-                showReviewMarkers: true
-            )
-            XCTAssertEqual(preparation.points.count, bars.count)
-        }
-    }
-
-    func testEightVisibleRowsChartPreparationBaseline() {
-        let rows = (0..<8).map { index in
-            Self.chartBars(count: 240, offset: Double(index))
-        }
-
-        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: options) {
-            for bars in rows {
+            StockWatchPerformanceBudget.recordInteraction(in: &durations) {
                 let preparation = IntradayChartPreparation(
                     points: bars,
                     market: .aShare,
@@ -197,11 +211,45 @@ final class ChartPerformanceBaselineTests: XCTestCase {
                 XCTAssertEqual(preparation.points.count, bars.count)
             }
         }
+        StockWatchPerformanceBudget.assertInteractionP95(durations)
+    }
+
+    func testEightVisibleRowsChartPreparationBaseline() {
+        let rows = (0..<8).map { index in
+            Self.chartBars(count: 240, offset: Double(index))
+        }
+        for bars in rows {
+            let warmup = IntradayChartPreparation(
+                points: bars,
+                market: .aShare,
+                dayOpen: 100,
+                previousClose: 100,
+                showReviewMarkers: true
+            )
+            XCTAssertEqual(warmup.points.count, bars.count)
+        }
+        var durations: [TimeInterval] = []
+
+        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: options) {
+            StockWatchPerformanceBudget.recordInteraction(in: &durations) {
+                for bars in rows {
+                    let preparation = IntradayChartPreparation(
+                        points: bars,
+                        market: .aShare,
+                        dayOpen: 100,
+                        previousClose: 100,
+                        showReviewMarkers: true
+                    )
+                    XCTAssertEqual(preparation.points.count, bars.count)
+                }
+            }
+        }
+        StockWatchPerformanceBudget.assertInteractionP95(durations)
     }
 
     private var options: XCTMeasureOptions {
         let options = XCTMeasureOptions()
-        options.iterationCount = 3
+        options.iterationCount = 30
         return options
     }
 

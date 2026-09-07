@@ -3,14 +3,14 @@ import XCTest
 
 @testable import OneBox
 
-final class WindowAspectRatioConfiguratorTests: XCTestCase {
+final class WindowGeometryConfiguratorTests: XCTestCase {
     @MainActor
-    func testAppliesWindowGeometry() {
+    func testAppliesMinimumSizeWithoutChangingAspectRatio() {
         let window = makeWindow(size: CGSize(width: 800, height: 600))
         let aspectRatio = CGSize(width: 1048, height: 648)
         let minimumSize = CGSize(width: 899, height: 556)
+        window.aspectRatio = aspectRatio
         let view = WindowGeometryView(
-            aspectRatio: aspectRatio,
             minimumWindowSize: minimumSize,
             forcedWindowSize: nil
         )
@@ -27,7 +27,6 @@ final class WindowAspectRatioConfiguratorTests: XCTestCase {
         let window = makeWindow(size: CGSize(width: 800, height: 600))
         let originalMinimumSize = window.minSize
         let view = WindowGeometryView(
-            aspectRatio: CGSize(width: 1048, height: 648),
             minimumWindowSize: CGSize(width: 899, height: 556),
             forcedWindowSize: nil
         )
@@ -43,7 +42,6 @@ final class WindowAspectRatioConfiguratorTests: XCTestCase {
         let forcedSize = CGSize(width: 1048, height: 648)
         let window = makeWindow(size: initialSize)
         let view = WindowGeometryView(
-            aspectRatio: forcedSize,
             minimumWindowSize: CGSize(width: 899, height: 556),
             forcedWindowSize: forcedSize
         )
@@ -56,6 +54,23 @@ final class WindowAspectRatioConfiguratorTests: XCTestCase {
         view.applyGeometry(applyForcedWindowSize: true)
 
         XCTAssertEqual(window.frame.size, forcedSize)
+    }
+
+    @MainActor
+    func testDoesNotReapplyGeometryAfterInitialWindowAttachment() {
+        let initialMinimumSize = CGSize(width: 899, height: 556)
+        let window = makeWindow(size: CGSize(width: 1_048, height: 648))
+        let view = WindowGeometryView(
+            minimumWindowSize: initialMinimumSize,
+            forcedWindowSize: nil
+        )
+        window.contentView = view
+
+        view.applyGeometry()
+        view.minimumWindowSize = CGSize(width: 1_200, height: 800)
+        view.applyGeometry()
+
+        XCTAssertEqual(window.minSize, initialMinimumSize)
     }
 
     @MainActor

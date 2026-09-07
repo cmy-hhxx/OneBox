@@ -4,7 +4,7 @@ import SwiftUI
 
 /// UI-only folder representation. The store adapts persisted `LibraryFolder`
 /// records into this tree, so the view never takes a database dependency.
-struct LibraryFolderNode: Identifiable, Hashable {
+struct LibraryFolderNode: Identifiable, Sendable {
     let id: UUID
     let folderID: UUID
     let name: String
@@ -117,14 +117,13 @@ enum LibraryItemAction {
 /// destinations stay in one content region beneath a compact, persistent bar.
 struct LibraryWorkspaceView<
     ImportContent: View,
-    SettingsContent: View,
     NowPlayingContent: View,
     CompactPlayerContent: View
 >: View {
     let folders: [LibraryFolderNode]
     @Binding var selectedCollection: LibraryCollection
-    @Binding var destination: LibraryDestination
-    let isSettingsPresented: Bool
+    let routeStack: [PodPinRoute]
+    let routeDirection: PodPinRouteDirection
     let selectedFolderTitle: String?
     let items: [LibraryItemRow]
     let itemsPhase: LibraryItemsPhase
@@ -135,22 +134,29 @@ struct LibraryWorkspaceView<
     let downloadSession: DownloadSession
     let playbackTimeline: PlaybackTimelineSession
     let importContent: ImportContent
-    let settingsContent: SettingsContent
     let nowPlayingContent: NowPlayingContent
     let compactPlayerContent: CompactPlayerContent
+    let notice: PodPinNotice?
     let onRequestFolderEditor: (FolderEditorRequest) -> Void
     let onFolderAction: (LibraryFolderNode, LibraryFolderAction) -> Void
     let onItemAction: (LibraryItemRow, LibraryItemAction) -> Void
     let onRetryItems: () -> Void
     let onLoadMoreItems: () -> Void
+    let onOpenImport: (UUID) -> Void
+    let onShowLibrary: () -> Void
     let onShowNowPlaying: () -> Void
-    let onToggleSettings: () -> Void
-    let onCloseSettings: () -> Void
+    let onCopyNoticeDetails: (String) -> Void
+    let onDismissNotice: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.oneBoxAccessibilityReduceMotionOverride) private var reduceMotionOverride
     @Environment(\.designPalette) private var palette
     @State private var isCollectionPickerPresented = false
     @AccessibilityFocusState private var isCollectionPickerButtonFocused: Bool
-    @AccessibilityFocusState private var isSettingsButtonFocused: Bool
+
+    private var reduceMotion: Bool {
+        reduceMotionOverride ?? systemReduceMotion
+    }
 
     private var selectedFolderID: UUID {
         selectedCollection.defaultImportFolderID
@@ -171,38 +177,40 @@ struct LibraryWorkspaceView<
     }
 
     private var isImportDestination: Bool {
-        if case .importLink = destination { return true }
+        if case .importLink = currentRoute { return true }
         return false
     }
 
+    private var currentRoute: PodPinRoute {
+        routeStack.last ?? .library
+    }
+
     var body: some View {
-        HStack(spacing: DesignMetrics.space12) {
-            VStack(spacing: 0) {
-                workspaceToolbar
-                    .padding(.bottom, DesignMetrics.space8)
-                destinationPane
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            workspaceToolbar
+                .padding(.bottom, DesignMetrics.space8)
 
-                if destination != .nowPlaying {
-                    Divider()
-                    compactPlayerContent
-                }
+            if let notice {
+                PodPinInlineNotice(
+                    notice: notice,
+                    onCopyDetails: onCopyNoticeDetails,
+                    onDismiss: onDismissNotice
+                )
+                .padding(.bottom, DesignMetrics.space8)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-            if isSettingsPresented {
-                ToolInspectorPanel("设置", closeLabel: "关闭设置", close: closeSettings) {
-                    settingsContent
-                }
-                .tint(palette.accent)
-                .frame(width: DesignMetrics.inspectorWidth)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+            routePane
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if currentRoute != .nowPlaying {
+                Divider()
+                compactPlayerContent
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(palette.background)
         .onChange(of: selectedCollection) { _, _ in
-            destination = .library
+            onShowLibrary()
         }
         .onChange(of: items) { _, refreshedItems in
             guard let selectedItemID,
@@ -223,6 +231,9 @@ struct LibraryWorkspaceView<
 
     private var fullWorkspaceToolbar: some View {
         HStack(spacing: DesignMetrics.space8) {
+            if isImportDestination {
+                importBackButton
+            }
             collectionSelectionMenu
             folderManagementMenu
 
@@ -240,20 +251,10 @@ struct LibraryWorkspaceView<
             toolbarDestinationButton(
                 "正在播放",
                 systemImage: "waveform",
-                isActive: destination == .nowPlaying,
+                isActive: currentRoute == .nowPlaying,
                 accessibilityIdentifier: "workspace.now-playing",
                 action: onShowNowPlaying
             )
-
-            toolbarDestinationButton(
-                "设置",
-                systemImage: "gearshape",
-                isActive: isSettingsPresented,
-                accessibilityIdentifier: "workspace.settings"
-            ) {
-                toggleSettings()
-            }
-            .accessibilityFocused($isSettingsButtonFocused)
         }
         .font(DesignTypography.bodyMedium)
         .controlSize(.regular)
@@ -266,6 +267,9 @@ struct LibraryWorkspaceView<
 
     private var compactWorkspaceToolbar: some View {
         HStack(spacing: DesignMetrics.space4) {
+            if isImportDestination {
+                importBackButton
+            }
             collectionSelectionMenu
                 .frame(minWidth: 132, maxWidth: .infinity, alignment: .leading)
             folderManagementMenu
@@ -284,19 +288,10 @@ struct LibraryWorkspaceView<
             compactToolbarDestinationButton(
                 "正在播放",
                 systemImage: "waveform",
-                isActive: destination == .nowPlaying,
+                isActive: currentRoute == .nowPlaying,
                 accessibilityIdentifier: "workspace.now-playing",
                 action: onShowNowPlaying
             )
-
-            compactToolbarDestinationButton(
-                "设置",
-                systemImage: "gearshape",
-                isActive: isSettingsPresented,
-                accessibilityIdentifier: "workspace.settings",
-                action: toggleSettings
-            )
-            .accessibilityFocused($isSettingsButtonFocused)
         }
         .font(DesignTypography.bodyMedium)
         .controlSize(.regular)
@@ -404,6 +399,19 @@ struct LibraryWorkspaceView<
         .help("管理文件夹")
     }
 
+    private var importBackButton: some View {
+        Button("返回资料库", systemImage: "chevron.left", action: onShowLibrary)
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .frame(
+                width: DesignMetrics.titlebarControlSize,
+                height: DesignMetrics.titlebarControlSize
+            )
+            .accessibilityLabel("返回资料库")
+            .accessibilityIdentifier("import.back")
+            .help("返回资料库")
+    }
+
     private func toolbarDestinationButton(
         _ title: String,
         systemImage: String,
@@ -457,7 +465,7 @@ struct LibraryWorkspaceView<
     private func selectCollection(_ collection: LibraryCollection) {
         selectedItemID = nil
         selectedCollection = collection
-        destination = .library
+        onShowLibrary()
         restoreCollectionPickerFocus()
     }
 
@@ -478,20 +486,27 @@ struct LibraryWorkspaceView<
         withID folderID: UUID,
         in nodes: [LibraryFolderNode]
     ) -> LibraryFolderNode? {
-        for node in nodes {
-            if node.id == folderID {
-                return node
-            }
-            if let match = folderNode(withID: folderID, in: node.children) {
-                return match
-            }
+        var stack = Array(nodes.reversed())
+        while let node = stack.popLast() {
+            if node.id == folderID { return node }
+            stack.append(contentsOf: node.children.reversed())
         }
         return nil
     }
 
+    private var routePane: some View {
+        ZStack {
+            routeContent
+                .id(currentRoute.id)
+                .transition(routeTransition)
+                .zIndex(Double(routeStack.count))
+        }
+        .clipped()
+    }
+
     @ViewBuilder
-    private var destinationPane: some View {
-        switch destination {
+    private var routeContent: some View {
+        switch currentRoute {
         case .library:
             libraryContent
         case .importLink:
@@ -631,21 +646,22 @@ struct LibraryWorkspaceView<
     }
 
     private func openImportForSelectedFolder() {
-        destination = .importLink(
-            ImportEntryContext(destinationFolderID: selectedFolderID)
-        )
+        onOpenImport(selectedFolderID)
     }
 
-    private func toggleSettings() {
-        isSettingsButtonFocused = false
-        onToggleSettings()
-    }
-
-    private func closeSettings() {
-        onCloseSettings()
-        Task { @MainActor in
-            await Task.yield()
-            isSettingsButtonFocused = true
+    private var routeTransition: AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        switch routeDirection {
+        case .push:
+            return AnyTransition.asymmetric(
+                insertion: AnyTransition.move(edge: .trailing),
+                removal: AnyTransition.move(edge: .leading)
+            )
+        case .pop:
+            return AnyTransition.asymmetric(
+                insertion: AnyTransition.move(edge: .leading),
+                removal: AnyTransition.move(edge: .trailing)
+            )
         }
     }
 

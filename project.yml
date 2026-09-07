@@ -79,6 +79,21 @@ targets:
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/OneBox.app/Contents/MacOS/OneBox"
 
+  OneBoxUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: Tests/UI
+      - path: Packages/Tools/PodPinTool/Tests/PodPinToolTests/Resources/Fixtures/podpin-sample.m4a
+        buildPhase: resources
+    dependencies:
+      - target: OneBox
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cmy.OneBoxUITests
+        GENERATE_INFOPLIST_FILE: true
+        TEST_TARGET_NAME: OneBox
+
 
 schemes:
   OneBox:
@@ -90,3 +105,27 @@ schemes:
       gatherCoverageData: false
       targets:
         - OneBoxAppTests
+        - OneBoxUITests
+
+  OneBoxUI:
+    build:
+      targets:
+        OneBox: all
+        OneBoxUITests: [test]
+    test:
+      config: Release
+      gatherCoverageData: false
+      targets:
+        - OneBoxUITests
+
+  OneBoxPerformance:
+    build:
+      targets:
+        OneBox: all
+        OneBoxUITests: [test]
+    test:
+      config: Release
+      gatherCoverageData: false
+      testPlans:
+        - path: Tests/TestPlans/OneBoxPerformance.xctestplan
+          defaultPlan: true

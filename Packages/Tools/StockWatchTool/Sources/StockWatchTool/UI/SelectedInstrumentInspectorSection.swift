@@ -16,14 +16,26 @@ enum SelectedInstrumentQuotePresentation {
 
 @MainActor
 struct SelectedInstrumentInspectorSection: View {
-    @ObservedObject var store: MonitorStore
+    let store: MonitorStore
     let selectedInstrumentID: InstrumentID?
+
+    private let watchlistPresentation: WatchlistPresentationSession
+    private let quotePresentation: QuotePresentationSession
+    private let alertPresentation: AlertPresentationSession
 
     @Environment(\.designPalette) private var palette
     @State private var removalCandidate: Instrument?
 
+    init(store: MonitorStore, selectedInstrumentID: InstrumentID?) {
+        self.store = store
+        self.selectedInstrumentID = selectedInstrumentID
+        self.watchlistPresentation = store.watchlistPresentation
+        self.quotePresentation = store.quotePresentation
+        self.alertPresentation = store.alertPresentation
+    }
+
     private var selectedInstrument: Instrument? {
-        store.instruments.first { $0.id == selectedInstrumentID }
+        watchlistPresentation.instruments.first { $0.id == selectedInstrumentID }
     }
 
     var body: some View {
@@ -66,7 +78,7 @@ struct SelectedInstrumentInspectorSection: View {
     }
 
     private func identity(_ instrument: Instrument) -> some View {
-        let monitored = store.monitoredInstrument(for: instrument.id)
+        let monitored = quotePresentation.snapshot.monitoredInstruments[instrument.id]
         let livePrice = SelectedInstrumentQuotePresentation.livePrice(
             status: monitored?.status,
             lastPrice: monitored?.quote?.lastPrice
@@ -103,7 +115,7 @@ struct SelectedInstrumentInspectorSection: View {
     }
 
     private func actions(_ instrument: Instrument) -> some View {
-        let index = store.instruments.firstIndex { $0.id == instrument.id }
+        let index = watchlistPresentation.instruments.firstIndex { $0.id == instrument.id }
 
         return HStack(spacing: DesignMetrics.space8) {
             Button("上移", systemImage: "arrow.up") {
@@ -111,7 +123,7 @@ struct SelectedInstrumentInspectorSection: View {
             }
             .labelStyle(.iconOnly)
             .buttonStyle(.bordered)
-            .disabled(index == nil || index == 0 || store.isWatchlistMutating)
+            .disabled(index == nil || index == 0 || watchlistPresentation.isMutating)
             .help("在观察列表中上移")
             .accessibilityLabel("上移 \(instrument.name)")
 
@@ -122,8 +134,8 @@ struct SelectedInstrumentInspectorSection: View {
             .buttonStyle(.bordered)
             .disabled(
                 index == nil
-                    || index == store.instruments.count - 1
-                    || store.isWatchlistMutating
+                    || index == watchlistPresentation.instruments.count - 1
+                    || watchlistPresentation.isMutating
             )
             .help("在观察列表中下移")
             .accessibilityLabel("下移 \(instrument.name)")
@@ -134,15 +146,15 @@ struct SelectedInstrumentInspectorSection: View {
                 removalCandidate = instrument
             }
             .buttonStyle(.bordered)
-            .disabled(store.isWatchlistMutating)
+            .disabled(watchlistPresentation.isMutating)
         }
         .controlSize(.small)
     }
 
     private func targetPriceControls(_ instrument: Instrument) -> some View {
-        let monitored = store.monitoredInstrument(for: instrument.id)
+        let monitored = quotePresentation.snapshot.monitoredInstruments[instrument.id]
         let targets =
-            store.priceAlertTargets[instrument.id]
+            alertPresentation.priceTargets[instrument.id]
             ?? PriceAlertTargets(risingPrice: nil, fallingPrice: nil)
         let hasLivePrice =
             SelectedInstrumentQuotePresentation.livePrice(
@@ -180,7 +192,7 @@ struct SelectedInstrumentInspectorSection: View {
                 )
             }
 
-            if store.alertConfiguration.basis != .targetPrice {
+            if alertPresentation.configuration.basis != .targetPrice {
                 Text("切换提醒依据为“目标价格”后生效。")
                     .font(DesignTypography.metadata)
                     .foregroundStyle(palette.textSecondary)
@@ -221,12 +233,12 @@ struct SelectedInstrumentInspectorSection: View {
     ) -> Binding<Double> {
         Binding(
             get: {
-                let targets = store.priceAlertTargets[instrument.id]
+                let targets = alertPresentation.priceTargets[instrument.id]
                 return isRising ? targets?.risingPrice ?? 0 : targets?.fallingPrice ?? 0
             },
             set: { value in
                 let targets =
-                    store.priceAlertTargets[instrument.id]
+                    alertPresentation.priceTargets[instrument.id]
                     ?? PriceAlertTargets(risingPrice: nil, fallingPrice: nil)
                 store.updatePriceTargets(
                     for: instrument,
@@ -238,7 +250,11 @@ struct SelectedInstrumentInspectorSection: View {
     }
 
     private func move(_ instrument: Instrument, direction: Int) {
-        guard let index = store.instruments.firstIndex(where: { $0.id == instrument.id }) else {
+        guard
+            let index = watchlistPresentation.instruments.firstIndex(where: {
+                $0.id == instrument.id
+            })
+        else {
             return
         }
         let destination = direction < 0 ? index - 1 : index + 2

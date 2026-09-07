@@ -1,3 +1,5 @@
+import Combine
+import Observation
 import XCTest
 
 @testable import StockWatchTool
@@ -256,6 +258,186 @@ final class MonitorStoreTests: XCTestCase {
         XCTAssertEqual(store.quoteBarCount, 0)
         await store.refreshQuoteBarCount()
         XCTAssertEqual(store.quoteBarCount, 2)
+        await store.stop()
+    }
+
+    func testRefreshPublishesLoadingAndOneCompleteQuoteSnapshotWithoutInvalidatingWholeStore()
+        async throws
+    {
+        let database = try MarketDatabase.inMemory()
+        let instrument = Instrument.initialWatchlist[2]
+        let quote = makeQuote(for: instrument, price: 210)
+        try await database.replaceWatchlist(with: [instrument])
+        let store = MonitorStore(
+            client: StaticMarketDataClient(quote: quote),
+            database: database,
+            preferences: makePreferences()
+        )
+        try await store.start()
+        await store.refreshAll()
+
+        let publicationCount = store.quotePresentationPublicationCountForTesting
+        let watchlistPublicationCount =
+            store.watchlistPresentationPublicationCountForTesting
+        let alertPublicationCount = store.alertPresentationPublicationCountForTesting
+        let diagnosticsPublicationCount =
+            store.diagnosticsPresentationPublicationCountForTesting
+        var wholeStorePublicationCount = 0
+        let subscription = store.objectWillChange.sink {
+            wholeStorePublicationCount += 1
+        }
+        let quoteObservation = expectation(description: "Quote presentation changed")
+        withObservationTracking {
+            _ = store.monitoredInstrument(for: instrument.id)
+            _ = store.lastRefresh
+            _ = store.sourceError
+        } onChange: {
+            quoteObservation.fulfill()
+        }
+
+        await store.refreshAll()
+        await fulfillment(of: [quoteObservation], timeout: 1)
+
+        XCTAssertEqual(
+            store.quotePresentationPublicationCountForTesting - publicationCount,
+            2,
+            "A refresh should publish one loading state and one complete quote snapshot"
+        )
+        XCTAssertEqual(wholeStorePublicationCount, 0)
+        XCTAssertEqual(
+            store.watchlistPresentationPublicationCountForTesting,
+            watchlistPublicationCount,
+            "Quote ticks must not invalidate watchlist presentation"
+        )
+        XCTAssertEqual(
+            store.alertPresentationPublicationCountForTesting,
+            alertPublicationCount,
+            "A non-triggering quote tick must not invalidate alert presentation"
+        )
+        XCTAssertEqual(
+            store.diagnosticsPresentationPublicationCountForTesting,
+            diagnosticsPublicationCount,
+            "Successful quote ticks must not invalidate diagnostics presentation"
+        )
+        XCTAssertEqual(store.monitoredInstrument(for: instrument.id)?.status, .live)
+        XCTAssertEqual(store.monitoredInstrument(for: instrument.id)?.quote, quote)
+        XCTAssertNotNil(store.lastRefresh)
+        XCTAssertNil(store.sourceError)
+
+        subscription.cancel()
+        await store.stop()
+    }
+
+    func testWatchlistReorderPublishesOnlyWatchlistPresentation() async throws {
+        let database = try MarketDatabase.inMemory()
+        let instruments = Array(Instrument.initialWatchlist.prefix(2))
+        try await database.replaceWatchlist(with: instruments)
+        let store = MonitorStore(
+            client: FailingMarketDataClient(),
+            database: database,
+            preferences: makePreferences()
+        )
+        try await store.start()
+        await store.refreshAll()
+
+        let watchlistPublicationCount =
+            store.watchlistPresentationPublicationCountForTesting
+        let quotePublicationCount = store.quotePresentationPublicationCountForTesting
+        let alertPublicationCount = store.alertPresentationPublicationCountForTesting
+        let diagnosticsPublicationCount =
+            store.diagnosticsPresentationPublicationCountForTesting
+
+        let didMove = await store.moveInstruments(
+            from: IndexSet(integer: 0),
+            to: instruments.count
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertEqual(store.instruments, [instruments[1], instruments[0]])
+        XCTAssertGreaterThan(
+            store.watchlistPresentationPublicationCountForTesting,
+            watchlistPublicationCount
+        )
+        XCTAssertEqual(store.quotePresentationPublicationCountForTesting, quotePublicationCount)
+        XCTAssertEqual(store.alertPresentationPublicationCountForTesting, alertPublicationCount)
+        XCTAssertEqual(
+            store.diagnosticsPresentationPublicationCountForTesting,
+            diagnosticsPublicationCount
+        )
+        await store.stop()
+    }
+
+    func testAlertConfigurationPublishesOnlyAlertPresentation() async throws {
+        let database = try MarketDatabase.inMemory()
+        try await database.replaceWatchlist(with: [])
+        let store = MonitorStore(
+            client: FailingMarketDataClient(),
+            database: database,
+            preferences: makePreferences()
+        )
+        try await store.start()
+        await store.refreshAll()
+
+        let watchlistPublicationCount =
+            store.watchlistPresentationPublicationCountForTesting
+        let quotePublicationCount = store.quotePresentationPublicationCountForTesting
+        let alertPublicationCount = store.alertPresentationPublicationCountForTesting
+        let diagnosticsPublicationCount =
+            store.diagnosticsPresentationPublicationCountForTesting
+        var configuration = store.alertConfiguration
+        configuration.risingThreshold += 0.5
+
+        XCTAssertTrue(store.updateAlertConfiguration(configuration))
+        XCTAssertEqual(
+            store.alertPresentationPublicationCountForTesting,
+            alertPublicationCount + 1
+        )
+        XCTAssertEqual(
+            store.watchlistPresentationPublicationCountForTesting,
+            watchlistPublicationCount
+        )
+        XCTAssertEqual(store.quotePresentationPublicationCountForTesting, quotePublicationCount)
+        XCTAssertEqual(
+            store.diagnosticsPresentationPublicationCountForTesting,
+            diagnosticsPublicationCount
+        )
+        await store.stop()
+    }
+
+    func testQuoteCountRefreshPublishesOnlyDiagnosticsPresentation() async throws {
+        let database = try MarketDatabase.inMemory()
+        let instrument = Instrument.initialWatchlist[0]
+        try await database.replaceWatchlist(with: [instrument])
+        try await database.saveQuote(makeQuote(for: instrument, price: 1_500), for: instrument)
+        let store = MonitorStore(
+            client: FailingMarketDataClient(),
+            database: database,
+            preferences: makePreferences()
+        )
+        try await store.start()
+        await store.refreshAll()
+
+        let watchlistPublicationCount =
+            store.watchlistPresentationPublicationCountForTesting
+        let quotePublicationCount = store.quotePresentationPublicationCountForTesting
+        let alertPublicationCount = store.alertPresentationPublicationCountForTesting
+        let diagnosticsPublicationCount =
+            store.diagnosticsPresentationPublicationCountForTesting
+
+        let didRefreshQuoteBarCount = await store.refreshQuoteBarCount()
+
+        XCTAssertTrue(didRefreshQuoteBarCount)
+        XCTAssertEqual(store.quoteBarCount, 2)
+        XCTAssertEqual(
+            store.diagnosticsPresentationPublicationCountForTesting,
+            diagnosticsPublicationCount + 1
+        )
+        XCTAssertEqual(
+            store.watchlistPresentationPublicationCountForTesting,
+            watchlistPublicationCount
+        )
+        XCTAssertEqual(store.quotePresentationPublicationCountForTesting, quotePublicationCount)
+        XCTAssertEqual(store.alertPresentationPublicationCountForTesting, alertPublicationCount)
         await store.stop()
     }
 

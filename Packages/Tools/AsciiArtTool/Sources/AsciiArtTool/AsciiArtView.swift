@@ -1,14 +1,23 @@
+import OSLog
 import OneBoxDesignSystem
+import OneBoxRuntime
 import SwiftUI
 import UniformTypeIdentifiers
 
 @MainActor
 struct AsciiArtView: View {
+    private static let exportSignposter = OSSignposter(
+        subsystem: "com.cmy.OneBox",
+        category: "ASCII"
+    )
+
     @Bindable var session: AsciiSession
     let renderCache: AsciiRenderCache
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.toolContentReadinessReporter) private var contentReadinessReporter
+    @State private var firstContentTrace = AsciiFirstContentPerformanceTrace()
     @State private var isImporterPresented = false
     @State private var isExporterPresented = false
     @State private var exportDocument = PNGDocument()
@@ -16,28 +25,32 @@ struct AsciiArtView: View {
     @State private var transientResumeTask: Task<Void, Never>?
     @State private var focusRestorationTask: Task<Void, Never>?
     @State private var isExporting = false
-    @AccessibilityFocusState private var isParameterButtonFocused: Bool
+    @FocusState private var isParameterButtonKeyboardFocused: Bool
+    @AccessibilityFocusState private var isParameterButtonAccessibilityFocused: Bool
 
     var body: some View {
         VStack(spacing: DesignMetrics.space8) {
             AsciiToolbar(
                 session: session,
                 isExporting: isExporting,
-                parameterFocus: $isParameterButtonFocused,
+                parameterKeyboardFocus: $isParameterButtonKeyboardFocused,
+                parameterAccessibilityFocus: $isParameterButtonAccessibilityFocused,
                 open: presentImporter,
                 toggleParameters: toggleParameters,
                 export: beginExport
             )
 
-            HStack(spacing: DesignMetrics.space12) {
-                AsciiCanvasView(session: session, renderCache: renderCache)
-
-                if session.isInspectorPresented {
-                    AsciiInspector(session: session, close: closeInspector)
-                        .frame(width: DesignMetrics.inspectorWidth)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
-            }
+            AsciiCanvasView(session: session, renderCache: renderCache)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("ascii.workspace")
+        .toolInspector(
+            isPresented: $session.isInspectorPresented,
+            title: "参数",
+            closeLabel: "关闭参数",
+            onDismiss: restoreParameterFocus
+        ) {
+            AsciiInspector(session: session)
         }
         .fileImporter(
             isPresented: $isImporterPresented,
@@ -60,14 +73,22 @@ struct AsciiArtView: View {
         .onChange(of: scenePhase) { _, phase in
             session.setSceneActive(phase == .active)
         }
+        .onChange(of: firstContentResolved, initial: true) { _, isResolved in
+            guard isResolved else { return }
+            reportFirstContentReady()
+        }
         .onExitCommand(perform: closeInspector)
     }
 
     private func appear() {
+        firstContentTrace.begin()
         session.prepareInitialSource()
         session.setReduceMotion(reduceMotion)
         session.setSceneActive(scenePhase == .active)
         session.setVisible(true)
+        if firstContentResolved {
+            reportFirstContentReady()
+        }
         transientResumeTask?.cancel()
         transientResumeTask = Task { @MainActor in
             await session.resumeTransientTasks()
@@ -76,7 +97,9 @@ struct AsciiArtView: View {
     }
 
     private func disappear() {
+        firstContentTrace.cancel()
         session.setVisible(false)
+        session.resetMetalReadiness()
         session.cancelTransientTasks()
         transientResumeTask?.cancel()
         transientResumeTask = nil
@@ -85,6 +108,16 @@ struct AsciiArtView: View {
         focusRestorationTask?.cancel()
         focusRestorationTask = nil
         isExporting = false
+    }
+
+    private var firstContentResolved: Bool {
+        guard session.source != nil else { return false }
+        return session.isMetalReady || session.statusError == .metalUnavailable
+    }
+
+    private func reportFirstContentReady() {
+        guard firstContentTrace.finish() else { return }
+        contentReadinessReporter.reportFirstContentReady()
     }
 
     private func presentImporter() {
@@ -112,6 +145,8 @@ struct AsciiArtView: View {
         isExporting = true
         session.clearStatus()
         exportTask = Task { @MainActor in
+            let interval = Self.exportSignposter.beginInterval("Export")
+            defer { Self.exportSignposter.endInterval("Export", interval) }
             do {
                 let data = try await AsciiAsyncDeadline.run(
                     for: AsciiAsyncDeadline.pngExport,
@@ -148,7 +183,6 @@ struct AsciiArtView: View {
     private func closeInspector() {
         guard session.isInspectorPresented else { return }
         session.isInspectorPresented = false
-        restoreParameterFocus()
     }
 
     private func toggleParameters() {
@@ -158,19 +192,18 @@ struct AsciiArtView: View {
         }
         focusRestorationTask?.cancel()
         focusRestorationTask = nil
-        isParameterButtonFocused = false
-        session.isInspectorPresented.toggle()
+        isParameterButtonKeyboardFocused = false
+        isParameterButtonAccessibilityFocused = false
+        session.isInspectorPresented = true
     }
 
     private func restoreParameterFocus() {
         focusRestorationTask?.cancel()
         focusRestorationTask = Task { @MainActor in
-            do {
-                try await Task.sleep(for: .milliseconds(100))
-                isParameterButtonFocused = true
-            } catch {
-                return
-            }
+            await Task.yield()
+            guard !Task.isCancelled, !session.isInspectorPresented else { return }
+            isParameterButtonKeyboardFocused = true
+            isParameterButtonAccessibilityFocused = true
             focusRestorationTask = nil
         }
     }

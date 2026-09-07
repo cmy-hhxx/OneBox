@@ -11,7 +11,8 @@ enum AddInstrumentAccessibility {
 
 @MainActor
 struct AddInstrumentSheet: View {
-    @ObservedObject private var store: MonitorStore
+    private let store: MonitorStore
+    private let watchlistPresentation: WatchlistPresentationSession
     @StateObject private var searchModel: WatchlistSearchModel
     let onAdded: (Instrument) -> Void
 
@@ -21,7 +22,8 @@ struct AddInstrumentSheet: View {
     @State private var feedbackMessage: String?
 
     init(store: MonitorStore, onAdded: @escaping (Instrument) -> Void) {
-        _store = ObservedObject(wrappedValue: store)
+        self.store = store
+        self.watchlistPresentation = store.watchlistPresentation
         _searchModel = StateObject(
             wrappedValue: WatchlistSearchModel { query in
                 try await store.search(query)
@@ -167,7 +169,7 @@ struct AddInstrumentSheet: View {
     }
 
     private func searchResultRow(_ instrument: Instrument) -> some View {
-        let isAdded = store.instruments.contains { $0.id == instrument.id }
+        let isAdded = watchlistPresentation.instruments.contains { $0.id == instrument.id }
 
         return HStack(spacing: DesignMetrics.space12) {
             VStack(alignment: .leading, spacing: DesignMetrics.space4) {
@@ -188,7 +190,7 @@ struct AddInstrumentSheet: View {
                 add(instrument)
             }
             .buttonStyle(.bordered)
-            .disabled(isAdded || store.isWatchlistMutating)
+            .disabled(isAdded || watchlistPresentation.isMutating)
             .accessibilityLabel(
                 AddInstrumentAccessibility.resultActionLabel(
                     for: instrument,

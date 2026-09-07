@@ -7,10 +7,13 @@ import Testing
 @Suite("ASCII session lifecycle")
 struct AsciiSessionTests {
     @Test
-    func `animation pauses offscreen and resumes with the in-memory session`() {
+    func `new session stays static until the user selects an animation`() {
         let session = AsciiSession()
 
         session.setVisible(true)
+        #expect(!session.isAnimationActive)
+
+        session.settings.animation = .wave
         #expect(session.isAnimationActive)
 
         session.setVisible(false)
@@ -24,6 +27,7 @@ struct AsciiSessionTests {
     @Test
     func `animation pauses while the window is minimized or occluded`() {
         let session = AsciiSession()
+        session.settings.animation = .wave
         session.setVisible(true)
 
         session.setWindowVisible(false)
@@ -39,6 +43,7 @@ struct AsciiSessionTests {
     @Test
     func `reduce motion defaults static but manual play explicitly starts animation`() {
         let session = AsciiSession()
+        session.settings.animation = .wave
         session.setVisible(true)
 
         session.setReduceMotion(true)
@@ -56,6 +61,17 @@ struct AsciiSessionTests {
         #expect(session.statusError == .metalUnavailable)
 
         session.setMetalReady(true)
+        #expect(session.statusError == nil)
+    }
+
+    @Test
+    func `detaching a prepared metal surface returns to pending without reporting failure`() {
+        let session = AsciiSession()
+        session.setMetalReady(true)
+
+        session.resetMetalReadiness()
+
+        #expect(!session.isMetalReady)
         #expect(session.statusError == nil)
     }
 
@@ -83,13 +99,13 @@ struct AsciiSessionTests {
     }
 
     @Test
-    func `parameters start visible and keep the user's collapsed state`() {
+    func `parameters start hidden and keep the user's expanded state`() {
         let session = AsciiSession()
 
-        #expect(session.isInspectorPresented)
-
-        session.isInspectorPresented = false
         #expect(!session.isInspectorPresented)
+
+        session.isInspectorPresented = true
+        #expect(session.isInspectorPresented)
     }
 
     @Test

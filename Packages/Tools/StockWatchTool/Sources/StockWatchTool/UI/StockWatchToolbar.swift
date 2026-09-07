@@ -9,19 +9,47 @@ enum StockWatchToolbarAccessibility {
 
 @MainActor
 struct StockWatchToolbar: View {
-    @ObservedObject var store: MonitorStore
+    let store: MonitorStore
     let isInspectorPresented: Bool
-    let inspectorFocus: AccessibilityFocusState<Bool>.Binding
+    let inspectorKeyboardFocus: FocusState<Bool>.Binding
+    let inspectorAccessibilityFocus: AccessibilityFocusState<Bool>.Binding
     let addInstrument: () -> Void
     let replaceWatchlistFromJSON: () -> Void
     let refresh: () -> Void
     let toggleInspector: () -> Void
 
+    private let watchlistPresentation: WatchlistPresentationSession
+    private let quotePresentation: QuotePresentationSession
+    private let diagnosticsPresentation: DiagnosticsPresentationSession
+
     @Environment(\.designPalette) private var palette
 
+    init(
+        store: MonitorStore,
+        isInspectorPresented: Bool,
+        inspectorKeyboardFocus: FocusState<Bool>.Binding,
+        inspectorAccessibilityFocus: AccessibilityFocusState<Bool>.Binding,
+        addInstrument: @escaping () -> Void,
+        replaceWatchlistFromJSON: @escaping () -> Void,
+        refresh: @escaping () -> Void,
+        toggleInspector: @escaping () -> Void
+    ) {
+        self.store = store
+        self.isInspectorPresented = isInspectorPresented
+        self.inspectorKeyboardFocus = inspectorKeyboardFocus
+        self.inspectorAccessibilityFocus = inspectorAccessibilityFocus
+        self.addInstrument = addInstrument
+        self.replaceWatchlistFromJSON = replaceWatchlistFromJSON
+        self.refresh = refresh
+        self.toggleInspector = toggleInspector
+        self.watchlistPresentation = store.watchlistPresentation
+        self.quotePresentation = store.quotePresentation
+        self.diagnosticsPresentation = store.diagnosticsPresentation
+    }
+
     private var isRefreshing: Bool {
-        store.instruments.contains { instrument in
-            store.monitoredInstrument(for: instrument.id)?.status == .loading
+        watchlistPresentation.instruments.contains { instrument in
+            quotePresentation.snapshot.monitoredInstruments[instrument.id]?.status == .loading
         }
     }
 
@@ -73,7 +101,8 @@ struct StockWatchToolbar: View {
             .help(isInspectorPresented ? "关闭检查器" : "显示检查器")
             .accessibilityValue(isInspectorPresented ? "已打开" : "已关闭")
             .accessibilityInputLabels(["检查器", "显示检查器", "关闭检查器"])
-            .accessibilityFocused(inspectorFocus)
+            .focused(inspectorKeyboardFocus)
+            .accessibilityFocused(inspectorAccessibilityFocus)
         }
         .font(DesignTypography.bodyMedium)
         .controlSize(.regular)
@@ -87,8 +116,8 @@ struct StockWatchToolbar: View {
     @ViewBuilder
     private var refreshStatus: some View {
         if let status = MonitorStatusIndicator(
-            sourceError: store.sourceError,
-            storageError: store.storageError
+            sourceError: quotePresentation.snapshot.sourceError,
+            storageError: diagnosticsPresentation.storageError
         ) {
             Label(status.accessibilityLabel, systemImage: status.icon)
                 .font(DesignTypography.metadata)
@@ -104,7 +133,7 @@ struct StockWatchToolbar: View {
                     .foregroundStyle(palette.textSecondary)
             }
             .accessibilityElement(children: .combine)
-        } else if let lastRefresh = store.lastRefresh {
+        } else if let lastRefresh = quotePresentation.snapshot.lastRefresh {
             Label {
                 Text(lastRefresh, style: .relative)
                     .monospacedDigit()

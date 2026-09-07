@@ -29,4 +29,19 @@ final class FixtureContentImporterTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: downloaded.url.path))
         XCTAssertEqual(downloaded.duration, 8)
     }
+
+    func testBundledFixtureProvidesDeterministicCollectionSegments() async throws {
+        let importer = try FixtureContentImporter.testFixture()
+        let discovery = try await importer.probe(url: FixtureContentImporter.collectionSampleURL)
+
+        XCTAssertEqual(discovery.groupTitle, "PodPin 示例合集")
+        XCTAssertEqual(
+            discovery.items.map(\.contentID),
+            ["collection-part-1", "collection-part-2", "collection-part-3"]
+        )
+        XCTAssertEqual(
+            discovery.items.map(\.title),
+            ["PodPin 示例分段 1", "PodPin 示例分段 2", "PodPin 示例分段 3"]
+        )
+    }
 }

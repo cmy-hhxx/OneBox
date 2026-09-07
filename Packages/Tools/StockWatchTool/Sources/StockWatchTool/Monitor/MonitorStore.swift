@@ -37,23 +37,29 @@ enum MonitorStoreOperationError: LocalizedError, Sendable, Equatable {
 @MainActor
 final class MonitorStore: ObservableObject {
     private static let signposter = OSSignposter(
-        subsystem: "com.cmy.OneBox.StockWatch",
-        category: "MonitorStore"
+        subsystem: "com.cmy.OneBox",
+        category: "StockWatch"
     )
 
-    @Published private var watchlist = Watchlist()
-    @Published private var monitoredInstruments: [InstrumentID: MonitoredInstrument] = [:]
-    @Published private(set) var lastRefresh: Date?
-    @Published private(set) var sourceError: String?
-    @Published private(set) var storageError: String?
-    @Published private(set) var quoteBarCount = 0
-    @Published private(set) var isWatchlistMutating = false
-    @Published private(set) var activeAlert: AlertEvent?
-    @Published private(set) var alertConfiguration = AlertConfiguration.default
-    @Published private(set) var priceAlertTargets: [InstrumentID: PriceAlertTargets] = [:]
+    let watchlistPresentation = WatchlistPresentationSession()
+    let quotePresentation = QuotePresentationSession()
+    let alertPresentation = AlertPresentationSession()
+    let diagnosticsPresentation: DiagnosticsPresentationSession
 
-    var instruments: [Instrument] { watchlist.instruments }
-    var databasePath: String { database.databasePath }
+    var instruments: [Instrument] { watchlistPresentation.instruments }
+    var databasePath: String { diagnosticsPresentation.databasePath }
+    var lastRefresh: Date? { quotePresentation.snapshot.lastRefresh }
+    var sourceError: String? { quotePresentation.snapshot.sourceError }
+    var storageError: String? { diagnosticsPresentation.storageError }
+    var quoteBarCount: Int { diagnosticsPresentation.quoteBarCount }
+    var isWatchlistMutating: Bool { watchlistPresentation.isMutating }
+    var activeAlert: AlertEvent? { alertPresentation.activeAlert }
+    var alertConfiguration: AlertConfiguration { alertPresentation.configuration }
+    var priceAlertTargets: [InstrumentID: PriceAlertTargets] {
+        alertPresentation.priceTargets
+    }
+
+    private var watchlist: Watchlist { watchlistPresentation.watchlist }
 
     private let client: any MarketDataClient
     private let database: MarketDatabase
@@ -102,6 +108,18 @@ final class MonitorStore: ObservableObject {
         var acceptsOperationsForTesting: Bool { acceptsOperations }
         var isClearingQuoteHistoryForTesting: Bool { isClearingQuoteHistory }
         var pendingAlertCountForTesting: Int { pendingAlerts.count }
+        var watchlistPresentationPublicationCountForTesting: Int {
+            watchlistPresentation.publicationCountForTesting
+        }
+        var quotePresentationPublicationCountForTesting: Int {
+            quotePresentation.publicationCountForTesting
+        }
+        var alertPresentationPublicationCountForTesting: Int {
+            alertPresentation.publicationCountForTesting
+        }
+        var diagnosticsPresentationPublicationCountForTesting: Int {
+            diagnosticsPresentation.publicationCountForTesting
+        }
     #endif
     private var storageErrors: [StorageErrorContext: StorageErrorEntry] = [:]
     private var storageErrorRevision = 0
@@ -128,6 +146,9 @@ final class MonitorStore: ObservableObject {
         self.client = client
         self.database = database
         self.preferences = preferences
+        self.diagnosticsPresentation = DiagnosticsPresentationSession(
+            databasePath: database.databasePath
+        )
         self.alertSoundPlayer = alertSoundPlayer
         self.refreshCoordinator = QuoteRefreshCoordinator(
             client: client,
@@ -178,25 +199,29 @@ final class MonitorStore: ObservableObject {
             let loadedAlertSettings = try await database.loadAlertSettings()
             try Task.checkCancellation()
 
-            alertConfiguration = loadedAlertSettings.configuration
-            priceAlertTargets = loadedAlertSettings.priceTargets
+            alertPresentation.publishSettings(loadedAlertSettings)
             lastPersistedAlertSettings = loadedAlertSettings
-            watchlist = Watchlist(instruments)
-            monitoredInstruments = Dictionary(
-                uniqueKeysWithValues: instruments.map { instrument in
-                    let quote = cachedQuotes[instrument.id]
-                    return (
-                        instrument.id,
-                        MonitoredInstrument(
-                            instrument: instrument,
-                            quote: quote,
-                            status: quote == nil ? .idle : .stale,
-                            statusMessage: quote == nil ? nil : tr("本地缓存")
-                        )
-                    )
-                }
+            watchlistPresentation.publish(Watchlist(instruments))
+            quotePresentation.publish(
+                QuotePresentationSnapshot(
+                    monitoredInstruments: Dictionary(
+                        uniqueKeysWithValues: instruments.map { instrument in
+                            let quote = cachedQuotes[instrument.id]
+                            return (
+                                instrument.id,
+                                MonitoredInstrument(
+                                    instrument: instrument,
+                                    quote: quote,
+                                    status: quote == nil ? .idle : .stale,
+                                    statusMessage: quote == nil ? nil : tr("本地缓存")
+                                )
+                            )
+                        }
+                    ),
+                    lastRefresh: nil,
+                    sourceError: nil
+                )
             )
-            sourceError = nil
         } catch {
             hasStarted = false
             throw error
@@ -275,7 +300,7 @@ final class MonitorStore: ObservableObject {
     }
 
     func monitoredInstrument(for id: InstrumentID) -> MonitoredInstrument? {
-        monitoredInstruments[id]
+        quotePresentation.snapshot.monitoredInstruments[id]
     }
 
     func search(_ query: String) async throws -> [Instrument] {
@@ -296,8 +321,10 @@ final class MonitorStore: ObservableObject {
                 do {
                     try await database.replaceWatchlist(with: updated.instruments)
                     invalidateRefreshMembership()
-                    watchlist = updated
-                    monitoredInstruments.removeValue(forKey: instrument.id)
+                    watchlistPresentation.publish(updated)
+                    quotePresentation.update {
+                        $0.monitoredInstruments.removeValue(forKey: instrument.id)
+                    }
                     alertEvaluators.removeValue(forKey: instrument.id)
                     var updatedTargets = priceAlertTargets
                     updatedTargets.removeValue(forKey: instrument.id)
@@ -330,7 +357,7 @@ final class MonitorStore: ObservableObject {
                 guard reordered != watchlist else { return false }
                 do {
                     try await database.replaceWatchlist(with: reordered.instruments)
-                    watchlist = reordered
+                    watchlistPresentation.publish(reordered)
                     clearStorageError(context: .watchlist)
                     return true
                 } catch {
@@ -407,21 +434,24 @@ final class MonitorStore: ObservableObject {
                     let keptIDs = Set(imported.instruments.map(\.id))
                     let removedIDs = Set(watchlist.instruments.map(\.id)).subtracting(keptIDs)
                     invalidateRefreshMembership()
-                    watchlist = imported
-                    monitoredInstruments = Dictionary(
-                        uniqueKeysWithValues: imported.instruments.map { instrument in
-                            let current = monitoredInstruments[instrument.id]
-                            return (
-                                instrument.id,
-                                MonitoredInstrument(
-                                    instrument: instrument,
-                                    quote: current?.quote,
-                                    status: current?.status ?? .idle,
-                                    statusMessage: current?.statusMessage
+                    watchlistPresentation.publish(imported)
+                    let currentInstruments = quotePresentation.snapshot.monitoredInstruments
+                    quotePresentation.update { presentation in
+                        presentation.monitoredInstruments = Dictionary(
+                            uniqueKeysWithValues: imported.instruments.map { instrument in
+                                let current = currentInstruments[instrument.id]
+                                return (
+                                    instrument.id,
+                                    MonitoredInstrument(
+                                        instrument: instrument,
+                                        quote: current?.quote,
+                                        status: current?.status ?? .idle,
+                                        statusMessage: current?.statusMessage
+                                    )
                                 )
-                            )
-                        }
-                    )
+                            }
+                        )
+                    }
                     applyPriceAlertTargets(
                         priceAlertTargets.filter { keptIDs.contains($0.key) },
                         persist: true
@@ -460,13 +490,15 @@ final class MonitorStore: ObservableObject {
                 do {
                     try await database.replaceWatchlist(with: updated.instruments)
                     invalidateRefreshMembership()
-                    watchlist = updated
-                    monitoredInstruments[instrument.id] = MonitoredInstrument(
-                        instrument: instrument,
-                        quote: nil,
-                        status: .idle,
-                        statusMessage: nil
-                    )
+                    watchlistPresentation.publish(updated)
+                    quotePresentation.update {
+                        $0.monitoredInstruments[instrument.id] = MonitoredInstrument(
+                            instrument: instrument,
+                            quote: nil,
+                            status: .idle,
+                            statusMessage: nil
+                        )
+                    }
                     clearStorageError(context: .watchlist)
                     scheduleRefreshAfterWatchlistMutation()
                     return nil
@@ -511,18 +543,20 @@ final class MonitorStore: ObservableObject {
         let currentInstruments = instruments
         let currentQuotes = Dictionary(
             uniqueKeysWithValues: currentInstruments.compactMap { instrument in
-                monitoredInstruments[instrument.id]?.quote.map { (instrument.id, $0) }
+                monitoredInstrument(for: instrument.id)?.quote.map { (instrument.id, $0) }
             }
         )
 
-        var loadingInstruments = monitoredInstruments
+        var loadingPresentation = quotePresentation.snapshot
         for instrument in currentInstruments {
-            guard var monitored = loadingInstruments[instrument.id] else { continue }
+            guard var monitored = loadingPresentation.monitoredInstruments[instrument.id] else {
+                continue
+            }
             monitored.status = .loading
             monitored.statusMessage = nil
-            loadingInstruments[instrument.id] = monitored
+            loadingPresentation.monitoredInstruments[instrument.id] = monitored
         }
-        monitoredInstruments = loadingInstruments
+        quotePresentation.publish(loadingPresentation)
 
         let coordinator = refreshCoordinator
         let task = Task { [weak self] in
@@ -534,8 +568,10 @@ final class MonitorStore: ObservableObject {
                 self.watchlistRevision == revision
             else { return }
             guard !currentInstruments.isEmpty else {
-                self.lastRefresh = Date()
-                self.sourceError = nil
+                self.quotePresentation.update {
+                    $0.lastRefresh = Date()
+                    $0.sourceError = nil
+                }
                 return
             }
 
@@ -563,7 +599,7 @@ final class MonitorStore: ObservableObject {
     @discardableResult
     func updateAlertConfiguration(_ configuration: AlertConfiguration) -> Bool {
         guard canAdmitOperation, configuration != alertConfiguration else { return false }
-        alertConfiguration = configuration
+        alertPresentation.publishConfiguration(configuration)
         alertEvaluators.removeAll()
         clearAllAlerts()
         scheduleAlertSettingsPersistence()
@@ -600,7 +636,7 @@ final class MonitorStore: ObservableObject {
             applyPriceAlertTargets(updated, persist: true)
             return true
         }
-        guard let monitored = monitoredInstruments[instrument.id],
+        guard let monitored = monitoredInstrument(for: instrument.id),
             monitored.status == .live,
             let quote = monitored.quote,
             quote.lastPrice > 0
@@ -632,7 +668,7 @@ final class MonitorStore: ObservableObject {
         var touched = Set<InstrumentID>()
         for instrument in instruments {
             guard !Task.isCancelled else { return nil }
-            guard let monitored = monitoredInstruments[instrument.id],
+            guard let monitored = monitoredInstrument(for: instrument.id),
                 monitored.status == .live,
                 let quote = monitored.quote,
                 quote.lastPrice > 0
@@ -667,15 +703,18 @@ final class MonitorStore: ObservableObject {
 
             do {
                 try await database.clearQuotes()
-                quoteBarCount = 0
-                monitoredInstruments = monitoredInstruments.mapValues { monitored in
-                    var monitored = monitored
-                    monitored.status = monitored.quote == nil ? .idle : .stale
-                    monitored.statusMessage =
-                        monitored.quote == nil
-                        ? nil
-                        : tr("缓存已清空，等待刷新")
-                    return monitored
+                diagnosticsPresentation.publishQuoteBarCount(0)
+                quotePresentation.update { presentation in
+                    presentation.monitoredInstruments =
+                        presentation.monitoredInstruments.mapValues { monitored in
+                            var monitored = monitored
+                            monitored.status = monitored.quote == nil ? .idle : .stale
+                            monitored.statusMessage =
+                                monitored.quote == nil
+                                ? nil
+                                : tr("缓存已清空，等待刷新")
+                            return monitored
+                        }
                 }
                 clearStorageError(context: .quoteClear)
                 clearStorageError(context: .quoteCount)
@@ -702,7 +741,7 @@ final class MonitorStore: ObservableObject {
 
     func dismissStorageError() {
         storageErrors.removeAll()
-        storageError = nil
+        diagnosticsPresentation.publishStorageError(nil)
     }
 
     func setAlertDismissalPaused(_ isPaused: Bool) {
@@ -729,7 +768,7 @@ final class MonitorStore: ObservableObject {
 
     func testAlert(_ direction: AlertDirection) {
         let instrument = instruments.first ?? Instrument.initialWatchlist[0]
-        let quote = monitoredInstruments[instrument.id]?.quote
+        let quote = monitoredInstrument(for: instrument.id)?.quote
         let targets = priceAlertTargets[instrument.id]
         let targetPrice =
             direction == .rising
@@ -762,7 +801,7 @@ final class MonitorStore: ObservableObject {
         )
         defer { Self.signposter.endInterval("ApplyRefreshBatch", interval) }
 
-        var updatedInstruments = monitoredInstruments
+        var updatedInstruments = quotePresentation.snapshot.monitoredInstruments
         var acceptedQuotes: [(Instrument, QuoteSnapshot)] = []
         var failures = 0
         var staleResponses = 0
@@ -816,7 +855,21 @@ final class MonitorStore: ObservableObject {
             }
             updatedInstruments[outcome.instrument.id] = monitored
         }
-        monitoredInstruments = updatedInstruments
+        let nextSourceError: String?
+        if failures == expectedCount {
+            nextSourceError = tr("行情连接暂不可用，已保留上次成功数据")
+        } else if failures + staleResponses == expectedCount {
+            nextSourceError = tr("行情源暂未返回更新数据，已保留较新缓存")
+        } else {
+            nextSourceError = nil
+        }
+        quotePresentation.publish(
+            QuotePresentationSnapshot(
+                monitoredInstruments: updatedInstruments,
+                lastRefresh: Date(),
+                sourceError: nextSourceError
+            )
+        )
 
         for (instrument, quote) in acceptedQuotes {
             evaluateAlert(for: instrument, quote: quote)
@@ -833,15 +886,13 @@ final class MonitorStore: ObservableObject {
             clearStorageError(context: .quoteWrite)
         }
 
-        lastRefresh = Date()
-        if failures == expectedCount {
-            sourceError = tr("行情连接暂不可用，已保留上次成功数据")
-        } else if failures + staleResponses == expectedCount {
-            sourceError = tr("行情源暂未返回更新数据，已保留较新缓存")
-        } else {
-            sourceError = nil
-        }
     }
+
+    #if DEBUG || STOCKWATCH_BENCHMARK
+        func applyRefreshBatchForTesting(_ batch: QuoteRefreshBatch) {
+            applyRefreshBatch(batch, expectedCount: batch.outcomes.count)
+        }
+    #endif
 
     private func evaluateAlert(for instrument: Instrument, quote: QuoteSnapshot) {
         guard alertConfiguration.isEnabled,
@@ -891,7 +942,7 @@ final class MonitorStore: ObservableObject {
     }
 
     private func showAlert(_ alert: AlertEvent) {
-        activeAlert = alert
+        alertPresentation.publishActiveAlert(alert)
         alertDismissalRemaining = alertDismissalDelay
         alertDismissalStartedAt = nil
         let soundEnabled =
@@ -928,7 +979,7 @@ final class MonitorStore: ObservableObject {
     }
 
     private func clearActiveAlert() {
-        activeAlert = nil
+        alertPresentation.publishActiveAlert(nil)
         dismissAlertTask?.cancel()
         dismissAlertTask = nil
         isAlertDismissalPaused = false
@@ -942,7 +993,7 @@ final class MonitorStore: ObservableObject {
 
     private func clearAllAlerts() {
         pendingAlerts.removeAll()
-        activeAlert = nil
+        alertPresentation.publishActiveAlert(nil)
         dismissAlertTask?.cancel()
         dismissAlertTask = nil
         isAlertDismissalPaused = false
@@ -968,7 +1019,7 @@ final class MonitorStore: ObservableObject {
         let changedIDs = Set(priceAlertTargets.keys)
             .union(targets.keys)
             .filter { priceAlertTargets[$0] != targets[$0] }
-        priceAlertTargets = targets
+        alertPresentation.publishPriceTargets(targets)
         for id in changedIDs {
             alertEvaluators.removeValue(forKey: id)
         }
@@ -1093,10 +1144,14 @@ final class MonitorStore: ObservableObject {
         } catch {
             guard revision == alertSettingsRevision else { return nil }
             let observedIDs = Set(instruments.map(\.id))
-            alertConfiguration = lastPersistedAlertSettings.configuration
-            priceAlertTargets = lastPersistedAlertSettings.priceTargets.filter {
-                observedIDs.contains($0.key)
-            }
+            alertPresentation.publishSettings(
+                AlertSettingsSnapshot(
+                    configuration: lastPersistedAlertSettings.configuration,
+                    priceTargets: lastPersistedAlertSettings.priceTargets.filter {
+                        observedIDs.contains($0.key)
+                    }
+                )
+            )
             alertEvaluators.removeAll()
             clearAllAlerts()
             alertSettingsPersistenceTask = nil
@@ -1192,7 +1247,7 @@ final class MonitorStore: ObservableObject {
         _ operation: @escaping @MainActor @Sendable () async -> Result
     ) async -> Result {
         pendingWatchlistMutations += 1
-        isWatchlistMutating = true
+        watchlistPresentation.setIsMutating(true)
         let previousTask = watchlistMutationTail
         let operationTask = Task { @MainActor in
             await previousTask?.value
@@ -1204,7 +1259,7 @@ final class MonitorStore: ObservableObject {
 
         let result = await operationTask.value
         pendingWatchlistMutations -= 1
-        isWatchlistMutating = pendingWatchlistMutations > 0
+        watchlistPresentation.setIsMutating(pendingWatchlistMutations > 0)
         return result
     }
 
@@ -1243,7 +1298,9 @@ final class MonitorStore: ObservableObject {
 
     private func reloadQuoteBarCount() async -> Bool {
         do {
-            quoteBarCount = try await database.quoteBarCount()
+            diagnosticsPresentation.publishQuoteBarCount(
+                try await database.quoteBarCount()
+            )
             clearStorageError(context: .quoteCount)
             return true
         } catch {
@@ -1276,10 +1333,11 @@ final class MonitorStore: ObservableObject {
     }
 
     private func publishLatestStorageError() {
-        storageError =
+        diagnosticsPresentation.publishStorageError(
             storageErrors.values.max {
                 $0.revision < $1.revision
             }?.message
+        )
     }
 
     private func restartRefreshLoop() {

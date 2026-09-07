@@ -4,30 +4,16 @@ import AppKit
 import OneBoxDesignSystem
 import SwiftUI
 
-/// Layout values for the OneBox content area. The player and queue share the
-/// wider surface, while the queue replaces the player at compact widths.
+/// Layout values for the focused player inside the OneBox content area.
 struct NowPlayingLayoutMetrics: Equatable {
     let artworkSize: CGFloat
     let contentWidth: CGFloat
-    let playerPaneWidth: CGFloat
-    let queuePaneWidth: CGFloat
     let artworkMetadataSpacing: CGFloat
     let metadataProgressSpacing: CGFloat
     let progressTransportSpacing: CGFloat
-    let showsQueueBesidePlayer: Bool
 
-    init(availableSize: CGSize, queueIsPresented: Bool) {
-        showsQueueBesidePlayer = queueIsPresented && availableSize.width >= 720
-
-        playerPaneWidth =
-            showsQueueBesidePlayer
-            ? availableSize.width * 0.55
-            : availableSize.width
-        queuePaneWidth =
-            showsQueueBesidePlayer
-            ? availableSize.width - playerPaneWidth
-            : 0
-        contentWidth = min(420, max(280, playerPaneWidth - 32))
+    init(availableSize: CGSize) {
+        contentWidth = min(420, max(280, availableSize.width - 32))
         artworkSize = min(
             240,
             max(156, min(availableSize.height * 0.46, contentWidth * 0.60))
@@ -42,13 +28,14 @@ struct NowPlayingLayoutMetrics: Equatable {
 
 /// Focused playback with native macOS controls and OneBox design tokens.
 struct NowPlayingView: View {
-    let contentOpacity: Double
+    @Binding var queueIsPresented: Bool
     @ObservedObject var playbackIdentity: PlaybackIdentitySession
     let playbackTimeline: PlaybackTimelineSession
     let output: PlaybackOutputSession
     @ObservedObject var queue: PlaybackQueueSession
     let downloadSession: DownloadSession
     let outputController: AudioPlaybackController
+    let backLabel: String
     let onClose: () -> Void
     let onTogglePlayback: () -> Void
     let onSkipBackward: () -> Void
@@ -66,25 +53,23 @@ struct NowPlayingView: View {
     let onRetryQueue: () -> Void
     let artworkURL: (AudioItem) -> URL?
 
-    @StateObject private var artworkColor = ArtworkColorModel()
-    @State private var queueIsPresented = false
+    @FocusState private var isQueueButtonKeyboardFocused: Bool
+    @AccessibilityFocusState private var isQueueButtonAccessibilityFocused: Bool
     @Environment(\.designPalette) private var palette
 
     var body: some View {
-        let currentArtworkURL = playbackIdentity.snapshot.artworkURL
-
         GeometryReader { proxy in
             NowPlayingHero(
-                contentOpacity: contentOpacity,
-                artworkAccent: artworkColor.color,
                 playbackIdentity: playbackIdentity,
                 playbackTimeline: playbackTimeline,
                 output: output,
-                queue: queue,
                 downloadSession: downloadSession,
                 outputController: outputController,
                 availableSize: proxy.size,
                 queueIsPresented: $queueIsPresented,
+                queueButtonKeyboardFocus: $isQueueButtonKeyboardFocused,
+                queueButtonAccessibilityFocus: $isQueueButtonAccessibilityFocused,
+                backLabel: backLabel,
                 onClose: onClose,
                 onTogglePlayback: onTogglePlayback,
                 onSkipBackward: onSkipBackward,
@@ -94,37 +79,53 @@ struct NowPlayingView: View {
                 onSetVolume: onSetVolume,
                 onCommitVolume: onCommitVolume,
                 onStartDownload: onStartDownload,
-                onCancelDownload: onCancelDownload,
-                onPlayQueueItem: onPlayQueueItem,
-                onRemoveQueueItem: onRemoveQueueItem,
-                onMoveQueueItem: onMoveQueueItem,
-                onClearQueue: onClearQueue,
-                onRetryQueue: onRetryQueue,
-                artworkURL: artworkURL
+                onCancelDownload: onCancelDownload
+            )
+        }
+        .toolInspector(
+            isPresented: $queueIsPresented,
+            title: "继续播放",
+            closeLabel: "关闭继续播放",
+            widthPolicy: .queue,
+            onDismiss: restoreQueueButtonFocus
+        ) {
+            NowPlayingQueueView(
+                session: queue,
+                artworkURL: artworkURL,
+                onPlay: onPlayQueueItem,
+                onRemove: onRemoveQueueItem,
+                onMove: onMoveQueueItem,
+                onClear: onClearQueue,
+                onRetry: onRetryQueue
             )
         }
         .background(palette.background)
         .tint(palette.accent)
-        .onAppear { artworkColor.load(from: currentArtworkURL) }
-        .onDisappear { artworkColor.cancel() }
-        .onChange(of: currentArtworkURL) { _, url in artworkColor.load(from: url) }
-        .onExitCommand(perform: onClose)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("now-playing.player")
+    }
+
+    private func restoreQueueButtonFocus() {
+        Task { @MainActor in
+            await Task.yield()
+            guard !queueIsPresented else { return }
+            isQueueButtonKeyboardFocused = true
+            isQueueButtonAccessibilityFocused = true
+        }
     }
 }
 
 private struct NowPlayingHero: View {
-    let contentOpacity: Double
-    let artworkAccent: Color?
     @ObservedObject var playbackIdentity: PlaybackIdentitySession
     let playbackTimeline: PlaybackTimelineSession
     let output: PlaybackOutputSession
-    @ObservedObject var queue: PlaybackQueueSession
     let downloadSession: DownloadSession
     let outputController: AudioPlaybackController
     let availableSize: CGSize
     @Binding var queueIsPresented: Bool
+    let queueButtonKeyboardFocus: FocusState<Bool>.Binding
+    let queueButtonAccessibilityFocus: AccessibilityFocusState<Bool>.Binding
+    let backLabel: String
     let onClose: () -> Void
     let onTogglePlayback: () -> Void
     let onSkipBackward: () -> Void
@@ -135,13 +136,6 @@ private struct NowPlayingHero: View {
     let onCommitVolume: () -> Void
     let onStartDownload: (AudioItem) -> Void
     let onCancelDownload: (UUID) -> Void
-    let onPlayQueueItem: (UUID) -> Void
-    let onRemoveQueueItem: (UUID) -> Void
-    let onMoveQueueItem: (UUID, Int) -> Void
-    let onClearQueue: () -> Void
-    let onRetryQueue: () -> Void
-    let artworkURL: (AudioItem) -> URL?
-
     @Environment(\.designPalette) private var palette
 
     var body: some View {
@@ -156,15 +150,12 @@ private struct NowPlayingHero: View {
                 0
             )
         )
-        let metrics = NowPlayingLayoutMetrics(
-            availableSize: contentSize,
-            queueIsPresented: queueIsPresented
-        )
+        let metrics = NowPlayingLayoutMetrics(availableSize: contentSize)
 
         VStack(spacing: DesignMetrics.space12) {
             header
 
-            playerAndQueue(snapshot: snapshot, metrics: metrics)
+            playerStage(snapshot: snapshot, metrics: metrics)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(DesignMetrics.space16)
@@ -174,16 +165,16 @@ private struct NowPlayingHero: View {
     private var header: some View {
         HStack(spacing: DesignMetrics.space12) {
             Button(action: onClose) {
-                Label("返回资料库", systemImage: "xmark")
+                Label(backLabel, systemImage: "chevron.left")
                     .labelStyle(.iconOnly)
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(palette.textSecondary)
                     .frame(width: 32, height: 32)
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel("返回资料库")
+            .accessibilityLabel(backLabel)
             .accessibilityIdentifier("now-playing.back")
-            .help("返回资料库")
+            .help(backLabel)
 
             Spacer(minLength: DesignMetrics.space8)
 
@@ -194,35 +185,13 @@ private struct NowPlayingHero: View {
                 onCommitVolume: onCommitVolume
             )
 
-            NowPlayingBottomSwitcher(queueIsPresented: $queueIsPresented)
+            NowPlayingBottomSwitcher(
+                queueIsPresented: $queueIsPresented,
+                keyboardFocus: queueButtonKeyboardFocus,
+                accessibilityFocus: queueButtonAccessibilityFocus
+            )
         }
         .frame(height: 32)
-    }
-
-    @ViewBuilder
-    private func playerAndQueue(
-        snapshot: PlaybackIdentitySnapshot,
-        metrics: NowPlayingLayoutMetrics
-    ) -> some View {
-        if metrics.showsQueueBesidePlayer {
-            HStack(spacing: 0) {
-                playerStage(snapshot: snapshot, metrics: metrics)
-                    .frame(width: metrics.playerPaneWidth)
-
-                queuePanel
-                    .frame(width: metrics.queuePaneWidth)
-                    .overlay(alignment: .leading) {
-                        Rectangle()
-                            .fill(palette.border)
-                            .frame(width: 1)
-                            .accessibilityHidden(true)
-                    }
-            }
-        } else if queueIsPresented {
-            queuePanel
-        } else {
-            playerStage(snapshot: snapshot, metrics: metrics)
-        }
     }
 
     private func playerStage(
@@ -252,18 +221,6 @@ private struct NowPlayingHero: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var queuePanel: some View {
-        NowPlayingQueueView(
-            session: queue,
-            artworkURL: artworkURL,
-            onPlay: onPlayQueueItem,
-            onRemove: onRemoveQueueItem,
-            onMove: onMoveQueueItem,
-            onClear: onClearQueue,
-            onRetry: onRetryQueue
-        )
-    }
-
     private func artwork(url: URL?, size: CGFloat) -> some View {
         ArtworkThumbnailView(url: url, maxPixelSize: 900)
             .frame(width: size, height: size)
@@ -271,9 +228,8 @@ private struct NowPlayingHero: View {
             .clipShape(RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius))
             .overlay {
                 RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius)
-                    .strokeBorder(artworkAccent ?? palette.border, lineWidth: 1)
+                    .strokeBorder(palette.border, lineWidth: 1)
             }
-            .opacity(contentOpacity)
             .id(url?.absoluteString ?? "no-artwork")
             .accessibilityHidden(true)
     }
@@ -390,7 +346,6 @@ private struct NowPlayingHero: View {
         HStack(spacing: DesignMetrics.space8) {
             NowPlayingRateMenu(
                 rate: snapshot.rate,
-                enabled: canControlPlayback(snapshot),
                 onSetRate: onSetRate
             )
 
@@ -678,7 +633,6 @@ private struct NowPlayingProgressControl: View {
             guard let optimisticTime, abs(value - optimisticTime) < 0.5 else { return }
             self.optimisticTime = nil
         }
-        .onExitCommand(perform: cancelScrubbing)
     }
 
     private var maximumDuration: TimeInterval {
@@ -715,16 +669,10 @@ private struct NowPlayingProgressControl: View {
         }
     }
 
-    private func cancelScrubbing() {
-        guard isScrubbing else { return }
-        isScrubbing = false
-        optimisticTime = nil
-    }
 }
 
 private struct NowPlayingRateMenu: View {
     let rate: Double
-    let enabled: Bool
     let onSetRate: (Double) -> Void
 
     @Environment(\.designPalette) private var palette
@@ -742,7 +690,6 @@ private struct NowPlayingRateMenu: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .disabled(!enabled)
         .accessibilityIdentifier("now-playing.playback-rate")
         .accessibilityLabel("播放速度，当前 \(rateLabel(rate))")
         .help("播放速度")
@@ -811,6 +758,7 @@ private struct NowPlayingPlayButton: View {
         .disabled(!enabled)
         .accessibilityIdentifier("now-playing.play")
         .accessibilityLabel(hasPlaybackIntent ? "暂停" : "播放")
+        .accessibilityValue(phase.isPlaying ? "正在播放" : "未播放")
         .help(hasPlaybackIntent ? "暂停" : "播放")
         .keyboardShortcut(.space, modifiers: [])
     }

@@ -6,6 +6,18 @@ import XCTest
 
 final class AudioPlaybackControllerTests: XCTestCase {
     @MainActor
+    func testStalePlaybackStartTokenCannotCancelNewerRequestForSameItem() {
+        let controller = AudioPlaybackController()
+        let itemID = UUID()
+
+        let staleToken = controller.beginPlaybackStart(for: itemID)
+        let currentToken = controller.beginPlaybackStart(for: itemID)
+
+        XCTAssertFalse(controller.cancelPlaybackStart(staleToken))
+        XCTAssertTrue(controller.cancelPlaybackStart(currentToken))
+    }
+
+    @MainActor
     func testLoadUsesInjectedPlayerFactory() async throws {
         let importer = try FixtureContentImporter.testFixture()
         let metadata = try await importer.probe(url: FixtureContentImporter.sampleURL).primaryItem
@@ -120,6 +132,35 @@ final class AudioPlaybackControllerTests: XCTestCase {
         XCTAssertTrue(didChangeRateWhileBuffering)
         XCTAssertEqual(controller.rate, 1.5)
         XCTAssertTrue(controller.state.hasPlaybackIntent)
+    }
+
+    @MainActor
+    func testAutoplayFromBeginningKeepsOriginalPlaybackStartIntervalThroughReadiness() async throws
+    {
+        let importer = try FixtureContentImporter.testFixture()
+        let metadata = try await importer.probe(url: FixtureContentImporter.sampleURL).primaryItem
+        let stream = try await importer.resolveStream(for: metadata)
+        let item = AudioItem(
+            platform: metadata.platform,
+            contentID: "startup-interval-handoff",
+            sourceURL: metadata.sourceURL,
+            title: metadata.title,
+            author: metadata.author,
+            duration: metadata.duration
+        )
+        let controller = AudioPlaybackController()
+        _ = controller.beginPlaybackStart(for: item.id)
+
+        controller.load(item: item, url: stream.url, resumeAt: 0, autoplay: true)
+        try await waitUntil(
+            {
+                controller.state == .buffering || controller.state == .playing
+            },
+            timeout: 5
+        )
+
+        XCTAssertEqual(controller.cancelledPlaybackStartCount, 0)
+        controller.stop()
     }
 
     @MainActor

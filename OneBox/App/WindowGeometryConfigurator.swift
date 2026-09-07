@@ -1,13 +1,11 @@
 import SwiftUI
 
-struct WindowAspectRatioConfigurator: NSViewRepresentable {
-    let aspectRatio: CGSize
+struct WindowGeometryConfigurator: NSViewRepresentable {
     let minimumWindowSize: CGSize
     let forcedWindowSize: CGSize?
 
     func makeNSView(context: Context) -> NSView {
         WindowGeometryView(
-            aspectRatio: aspectRatio,
             minimumWindowSize: minimumWindowSize,
             forcedWindowSize: forcedWindowSize
         )
@@ -16,25 +14,20 @@ struct WindowAspectRatioConfigurator: NSViewRepresentable {
     func updateNSView(_ view: NSView, context: Context) {
         guard let view = view as? WindowGeometryView else { return }
 
-        view.aspectRatio = aspectRatio
         view.minimumWindowSize = minimumWindowSize
         view.forcedWindowSize = forcedWindowSize
-        view.applyGeometry()
     }
 }
 
 final class WindowGeometryView: NSView {
-    var aspectRatio: CGSize
     var minimumWindowSize: CGSize
     var forcedWindowSize: CGSize?
-    private var didApplyForcedWindowSize = false
+    private var didApplyInitialGeometry = false
 
     init(
-        aspectRatio: CGSize,
         minimumWindowSize: CGSize,
         forcedWindowSize: CGSize?
     ) {
-        self.aspectRatio = aspectRatio
         self.minimumWindowSize = minimumWindowSize
         self.forcedWindowSize = forcedWindowSize
         super.init(frame: .zero)
@@ -54,17 +47,16 @@ final class WindowGeometryView: NSView {
     }
 
     func applyGeometry(applyForcedWindowSize: Bool = false) {
-        guard let window else { return }
+        guard let window, !didApplyInitialGeometry else { return }
 
-        window.aspectRatio = aspectRatio
+        didApplyInitialGeometry = true
         window.minSize = minimumWindowSize
 
-        if applyForcedWindowSize, let forcedWindowSize, !didApplyForcedWindowSize {
+        if applyForcedWindowSize, let forcedWindowSize {
             var frame = window.frame
             frame.origin.y += frame.height - forcedWindowSize.height
             frame.size = forcedWindowSize
             window.setFrame(frame, display: true)
-            didApplyForcedWindowSize = true
         }
     }
 }

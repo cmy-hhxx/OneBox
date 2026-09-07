@@ -3,25 +3,44 @@ import SwiftUI
 
 @MainActor
 struct StockWatchWorkspaceView: View {
-    @ObservedObject var store: MonitorStore
+    let store: MonitorStore
     let preferences: StockWatchPreferences
     let copyText: (String) -> Bool
     let revealDirectory: (URL) -> Bool
 
+    private let watchlistPresentation: WatchlistPresentationSession
+    private let alertPresentation: AlertPresentationSession
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedInstrumentID: InstrumentID?
-    @State private var isInspectorPresented = true
+    @State private var isInspectorPresented = false
     @State private var isAddInstrumentPresented = false
     @State private var isJSONSheetPresented = false
     @State private var focusRestorationTask: Task<Void, Never>?
-    @AccessibilityFocusState private var isInspectorButtonFocused: Bool
+    @FocusState private var isInspectorButtonKeyboardFocused: Bool
+    @AccessibilityFocusState private var isInspectorButtonAccessibilityFocused: Bool
+
+    init(
+        store: MonitorStore,
+        preferences: StockWatchPreferences,
+        copyText: @escaping (String) -> Bool,
+        revealDirectory: @escaping (URL) -> Bool
+    ) {
+        self.store = store
+        self.preferences = preferences
+        self.copyText = copyText
+        self.revealDirectory = revealDirectory
+        self.watchlistPresentation = store.watchlistPresentation
+        self.alertPresentation = store.alertPresentation
+    }
 
     var body: some View {
         VStack(spacing: DesignMetrics.space8) {
             StockWatchToolbar(
                 store: store,
                 isInspectorPresented: isInspectorPresented,
-                inspectorFocus: $isInspectorButtonFocused,
+                inspectorKeyboardFocus: $isInspectorButtonKeyboardFocused,
+                inspectorAccessibilityFocus: $isInspectorButtonAccessibilityFocused,
                 addInstrument: { isAddInstrumentPresented = true },
                 replaceWatchlistFromJSON: { isJSONSheetPresented = true },
                 refresh: refresh,
@@ -31,6 +50,20 @@ struct StockWatchWorkspaceView: View {
             workspaceContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .toolInspector(
+            isPresented: $isInspectorPresented,
+            title: "检查器",
+            closeLabel: "关闭检查器",
+            onDismiss: restoreInspectorButtonFocus
+        ) {
+            StockWatchInspector(
+                store: store,
+                preferences: preferences,
+                selectedInstrumentID: selectedInstrumentID,
+                copyText: copyText,
+                revealDirectory: revealDirectory
+            )
+        }
         .sheet(isPresented: $isAddInstrumentPresented) {
             AddInstrumentSheet(store: store) { instrument in
                 selectedInstrumentID = instrument.id
@@ -38,11 +71,11 @@ struct StockWatchWorkspaceView: View {
         }
         .sheet(isPresented: $isJSONSheetPresented) {
             WatchlistJSONSheet(store: store, copyText: copyText) {
-                selectedInstrumentID = store.instruments.first?.id
+                selectedInstrumentID = watchlistPresentation.instruments.first?.id
             }
         }
         .onAppear(perform: reconcileSelection)
-        .onChange(of: store.instruments) { _, _ in
+        .onChange(of: watchlistPresentation.instruments) { _, _ in
             reconcileSelection()
         }
         .onExitCommand(perform: closeInspector)
@@ -54,17 +87,9 @@ struct StockWatchWorkspaceView: View {
 
     private var workspaceContent: some View {
         ZStack(alignment: .topTrailing) {
-            HStack(spacing: DesignMetrics.space12) {
-                monitor
+            monitor
 
-                if isInspectorPresented {
-                    inspector
-                        .frame(width: DesignMetrics.inspectorWidth)
-                        .transition(inspectorTransition)
-                }
-            }
-
-            if let alert = store.activeAlert {
+            if let alert = alertPresentation.activeAlert {
                 AlertBannerView(
                     alert: alert,
                     setDismissalPaused: store.setAlertDismissalPaused,
@@ -81,7 +106,7 @@ struct StockWatchWorkspaceView: View {
         }
         .animation(
             reduceMotion ? .easeInOut(duration: 0.12) : .easeOut(duration: 0.18),
-            value: store.activeAlert?.id
+            value: alertPresentation.activeAlert?.id
         )
     }
 
@@ -92,23 +117,6 @@ struct StockWatchWorkspaceView: View {
             openAddInstrument: { isAddInstrumentPresented = true }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var inspector: some View {
-        StockWatchInspector(
-            store: store,
-            preferences: preferences,
-            selectedInstrumentID: selectedInstrumentID,
-            copyText: copyText,
-            revealDirectory: revealDirectory,
-            close: closeInspector
-        )
-    }
-
-    private var inspectorTransition: AnyTransition {
-        reduceMotion
-            ? .opacity
-            : .move(edge: .trailing).combined(with: .opacity)
     }
 
     private func refresh() {
@@ -124,36 +132,33 @@ struct StockWatchWorkspaceView: View {
         }
         focusRestorationTask?.cancel()
         focusRestorationTask = nil
-        isInspectorButtonFocused = false
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
-            isInspectorPresented = true
-        }
+        isInspectorButtonKeyboardFocused = false
+        isInspectorButtonAccessibilityFocused = false
+        isInspectorPresented = true
     }
 
     private func closeInspector() {
         guard isInspectorPresented else { return }
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
-            isInspectorPresented = false
-        }
-        restoreInspectorButtonFocus()
+        isInspectorPresented = false
     }
 
     private func restoreInspectorButtonFocus() {
         focusRestorationTask?.cancel()
         focusRestorationTask = Task { @MainActor in
             await Task.yield()
-            guard !Task.isCancelled else { return }
-            isInspectorButtonFocused = true
+            guard !Task.isCancelled, !isInspectorPresented else { return }
+            isInspectorButtonKeyboardFocused = true
+            isInspectorButtonAccessibilityFocused = true
             focusRestorationTask = nil
         }
     }
 
     private func reconcileSelection() {
         if let selectedInstrumentID,
-            store.instruments.contains(where: { $0.id == selectedInstrumentID })
+            watchlistPresentation.instruments.contains(where: { $0.id == selectedInstrumentID })
         {
             return
         }
-        selectedInstrumentID = store.instruments.first?.id
+        selectedInstrumentID = watchlistPresentation.instruments.first?.id
     }
 }

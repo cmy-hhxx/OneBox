@@ -1,8 +1,7 @@
 import OneBoxDesignSystem
 import SwiftUI
 
-/// The continuation queue shown beside the focused player, or as the primary
-/// pane when the available width cannot support both views.
+/// The continuation queue shown in OneBox's shared trailing inspector.
 struct NowPlayingQueueView: View {
     @ObservedObject var session: PlaybackQueueSession
     let artworkURL: (AudioItem) -> URL?
@@ -13,19 +12,22 @@ struct NowPlayingQueueView: View {
     let onRetry: () -> Void
 
     @Environment(\.designPalette) private var palette
+    @State private var isClearConfirmationPresented = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.space12) {
-            HStack(alignment: .firstTextBaseline, spacing: DesignMetrics.space12) {
-                Text("继续播放")
-                    .font(DesignTypography.sectionTitle)
-                    .foregroundStyle(palette.textPrimary)
+            if !session.entries.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: DesignMetrics.space12) {
+                    Text("\(session.entries.count) 项待播")
+                        .font(DesignTypography.metadata.monospacedDigit())
+                        .foregroundStyle(palette.textSecondary)
 
-                Spacer(minLength: DesignMetrics.space8)
+                    Spacer(minLength: DesignMetrics.space8)
 
-                if !session.entries.isEmpty {
-                    Button("清空队列", role: .destructive, action: onClear)
-                        .font(DesignTypography.body)
+                    Button("清空队列", role: .destructive) {
+                        isClearConfirmationPresented = true
+                    }
+                    .font(DesignTypography.body)
                 }
             }
 
@@ -36,43 +38,50 @@ struct NowPlayingQueueView: View {
             if session.entries.isEmpty {
                 emptyState
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(session.entries.enumerated()), id: \.element.id) {
-                            index, entry in
-                            NowPlayingQueueRow(
-                                entry: entry,
-                                index: index,
-                                count: session.entries.count,
-                                artworkURL: artworkURL(entry.item),
-                                onPlay: onPlay,
-                                onRemove: onRemove,
-                                onMove: onMove
-                            )
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(session.entries.enumerated()), id: \.element.id) {
+                        index, entry in
+                        NowPlayingQueueRow(
+                            entry: entry,
+                            index: index,
+                            count: session.entries.count,
+                            artworkURL: artworkURL(entry.item),
+                            onPlay: onPlay,
+                            onRemove: onRemove,
+                            onMove: onMove
+                        )
 
-                            if index < session.entries.count - 1 {
-                                Rectangle()
-                                    .fill(palette.border)
-                                    .frame(height: 1)
-                                    .padding(
-                                        .leading,
-                                        DesignMetrics.space48 + DesignMetrics.space12
-                                    )
-                                    .accessibilityHidden(true)
-                            }
+                        if index < session.entries.count - 1 {
+                            Rectangle()
+                                .fill(palette.border)
+                                .frame(height: 1)
+                                .padding(
+                                    .leading,
+                                    DesignMetrics.space48 + DesignMetrics.space12
+                                )
+                                .accessibilityHidden(true)
                         }
                     }
                 }
             }
         }
-        .padding(DesignMetrics.space16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(palette.surface)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .tint(palette.accent)
         .contextMenu {
             if !session.entries.isEmpty {
-                Button("清空队列", role: .destructive, action: onClear)
+                Button("清空队列", role: .destructive) {
+                    isClearConfirmationPresented = true
+                }
             }
+        }
+        .confirmationDialog(
+            "清空待播队列？",
+            isPresented: $isClearConfirmationPresented
+        ) {
+            Button("清空队列", role: .destructive, action: onClear)
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("将移除全部待播项目，当前播放内容不会停止。")
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("now-playing.queue")
@@ -120,7 +129,8 @@ struct NowPlayingQueueView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 280)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.vertical, DesignMetrics.space24)
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
     }
 }
@@ -221,6 +231,8 @@ private struct NowPlayingQueueRow: View {
 
 struct NowPlayingBottomSwitcher: View {
     @Binding var queueIsPresented: Bool
+    let keyboardFocus: FocusState<Bool>.Binding
+    let accessibilityFocus: AccessibilityFocusState<Bool>.Binding
 
     @Environment(\.designPalette) private var palette
 
@@ -238,6 +250,8 @@ struct NowPlayingBottomSwitcher: View {
             .frame(width: 32, height: 32)
         }
         .buttonStyle(.borderless)
+        .focused(keyboardFocus)
+        .accessibilityFocused(accessibilityFocus)
         .accessibilityLabel(queueIsPresented ? "隐藏继续播放" : "显示继续播放")
         .accessibilityIdentifier("now-playing.queue-toggle")
         .help(queueIsPresented ? "隐藏继续播放" : "显示继续播放")

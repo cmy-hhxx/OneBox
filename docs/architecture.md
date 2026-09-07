@@ -72,14 +72,14 @@ PodPin 首次被选择时才创建 session 内容并打开旧命名空间数据�
 
 provider 响应先解析和校验，再进入内存和本地缓存。请求不包含 OneBox 账户、交易指令或整份自选列表；工具离屏后不发起搜索或刷新。公开端点没有 OneBox 可承诺的 SLA，数据可能延迟、中断、缺失或错误。
 
-PodPin 继续使用 `~/Library/Application Support/PodPin/` 和原 PodPin 偏好 suite，不复制已有资料库。沿用的既有偏好键是 `podpin.nowPlayingContentOpacity`、`podpin.playbackRate`、`podpin.playbackVolume` 和 `podpin.lastLibraryCollection`。只有用户发起的公开链接导入、在线播放、下载或重试才访问声明的内容源；外部媒体工具策略和锁定信息见 [`Tools/README.md`](../Tools/README.md)。
+PodPin 继续使用 `~/Library/Application Support/PodPin/` 和原 PodPin 偏好 suite，不复制已有资料库。当前使用 `podpin.playbackRate`、`podpin.playbackVolume` 和 `podpin.lastLibraryCollection`；遗留的 `podpin.nowPlayingContentOpacity` 键保留在用户偏好中但不再读取、写入或主动删除，封面固定使用正常不透明度。只有用户发起的公开链接导入、在线播放、下载或重试才访问声明的内容源；外部媒体工具策略和锁定信息见 [`Tools/README.md`](../Tools/README.md)。
 
 ## 当前运行状态
 
 - 宿主启动时选择第一个 registration，因此 ASCII 工坊默认打开；其他工具在被选择前不构造内容。
-- ASCII 工坊在注册时创建内存会话和惰性渲染缓存，不请求设备或执行 I/O。工具隐藏、场景失活、窗口最小化、窗口完全遮挡或用户暂停时停止持续绘制，关闭视图时取消导入和导出。
+- ASCII 工坊在注册时创建默认静态的内存会话和惰性渲染缓存，不请求设备或执行 I/O。用户显式选择动画并播放后才持续绘制；工具隐藏、场景失活、窗口最小化、窗口完全遮挡或用户暂停时停止，关闭视图时取消导入和导出。
 - 股票看盘已接入既有 registration；只在可见期间打开本地库和公开行情源，不请求系统通知权限，也不执行后台监控。
 - PodPin 首次被选择时才开库并安装系统媒体命令；离屏后已开始的播放和下载可以继续，应用退出会等待其 flush 和清理。
-- 股票看盘只用 Unified Logging signpost 记录固定性能区间；PodPin 使用脱敏事件日志。两者都不记录用户内容、完整查询或绝对用户路径。
+- 性能区间统一使用 `com.cmy.OneBox` subsystem，并按 Host、ASCII、StockWatch、PodPin category 区分；PodPin 的事件日志保持脱敏。日志只记录固定区间和分类状态，不记录用户内容、完整查询或绝对用户路径。
 
 工具接入规则见 [工具模块契约](module-contract.md)；当前事实仍以源码、测试、各 `Package.swift` 和 `project.yml` 为准。

@@ -5,6 +5,11 @@ import Testing
 @Suite("ASCII settings")
 struct AsciiSettingsTests {
     @Test
+    func `new settings default to static rendering`() {
+        #expect(AsciiSettings().animation == .off)
+    }
+
+    @Test
     func `domain exposes the seven locked palettes`() {
         #expect(
             AsciiPalettePreset.allCases.map(\.rawValue) == [

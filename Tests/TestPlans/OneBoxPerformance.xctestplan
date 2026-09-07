@@ -1,0 +1,41 @@
+{
+  "configurations" : [
+    {
+      "id" : "A18B0448-18D7-4D6C-BB45-07CDBB1B49ED",
+      "name" : "Release Performance",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "codeCoverage" : false,
+    "environmentVariableEntries" : [
+      {
+        "enabled" : true,
+        "key" : "ONEBOX_RUN_PERFORMANCE_TESTS",
+        "value" : "1"
+      }
+    ]
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "selectedTests" : [
+        "OneBoxPerformanceUITests/testColdLaunchToInteractiveWorkspace()",
+        "OneBoxPerformanceUITests/testInspectorAndPodPinRoutePresentation()",
+        "OneBoxPerformanceUITests/testLocalPlaybackStart()",
+        "OneBoxPerformanceUITests/testPodPinWarmReentry()",
+        "OneBoxPerformanceUITests/testStaticWorkspaceIdleForSixtySeconds()",
+        "OneBoxPerformanceUITests/testTwentyRoundToolSwitchingFootprint()",
+        "OneBoxPerformanceUITests/testWarmToolActivationAndSwitching()"
+      ],
+      "target" : {
+        "containerPath" : "container:OneBox.xcodeproj",
+        "identifier" : "E9FDBDA0BC700BC00B6F97C7",
+        "name" : "OneBoxUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

@@ -19,13 +19,15 @@ enum LibraryItemsPhase: Equatable {
 @MainActor
 final class PodPinStore: ObservableObject {
     private static let performanceSignposter = OSSignposter(
-        subsystem: "io.github.cmy-hhxx.podpin",
-        category: "library.performance"
+        subsystem: "com.cmy.OneBox",
+        category: "PodPin"
     )
     private static let playbackPerformanceSignposter = OSSignposter(
-        subsystem: "io.github.cmy-hhxx.podpin",
-        category: "playback.performance"
+        subsystem: "com.cmy.OneBox",
+        category: "PodPin"
     )
+    private var warmResumeInterval: OSSignpostIntervalState?
+    private var isUISurfaceVisible = false
 
     enum ImportChoice: Sendable {
         case stream
@@ -145,6 +147,7 @@ final class PodPinStore: ObservableObject {
     private var startupTask: Task<Void, Never>?
     private var itemRefreshTask: Task<Void, Never>?
     private var itemLoadMoreTask: Task<Void, Never>?
+    private var postReadyMaintenanceTask: Task<Void, Never>?
     private var browserProfileTask: Task<Void, Never>?
     private var nextItemCursor: ItemCursor?
     private var isLoadingMoreItems = false
@@ -169,6 +172,7 @@ final class PodPinStore: ObservableObject {
 
     #if DEBUG || PODPIN_TESTING
         var hasPendingBrowserAccess: Bool { pendingBrowserLease != nil }
+        var isUISurfaceVisibleForTesting: Bool { isUISurfaceVisible }
         var itemRefreshTestHook: ((LibraryCollection) async -> Void)?
         var itemRefreshCompletionTestHook: ((LibraryCollection) -> Void)?
     #endif
@@ -262,21 +266,31 @@ final class PodPinStore: ObservableObject {
 
     func resumeUI() async {
         guard !isShutDown else { return }
+        isUISurfaceVisible = true
         nowPlayingController.activate()
         if isStarted {
-            await refreshItems()
+            scheduleWarmRefresh()
         } else {
             await start()
         }
     }
 
+    /// Called before SwiftUI rebuilds a cached PodPin surface. The matching
+    /// finish comes from the surface's appearance callback.
+    func beginWarmResumePresentation() {
+        guard isStarted, !isUISurfaceVisible, warmResumeInterval == nil else { return }
+        warmResumeInterval = Self.performanceSignposter.beginInterval("PodPinWarmResume")
+    }
+
+    func finishWarmResumePresentation() {
+        guard let warmResumeInterval else { return }
+        self.warmResumeInterval = nil
+        Self.performanceSignposter.endInterval("PodPinWarmResume", warmResumeInterval)
+    }
+
     func start() async {
         if let startupTask {
-            await withTaskCancellationHandler {
-                await startupTask.value
-            } onCancel: {
-                startupTask.cancel()
-            }
+            await startupTask.value
             return
         }
         guard !isShutDown, !isStarted, !isStarting else { return }
@@ -286,16 +300,30 @@ final class PodPinStore: ObservableObject {
             await self.performStart()
         }
         startupTask = task
-        await withTaskCancellationHandler {
-            await task.value
-        } onCancel: {
-            task.cancel()
-        }
+        // Startup belongs to the long-lived tool session, not to whichever
+        // SwiftUI surface first requested it. A quick tool switch cancels that
+        // surface's `.task`; cancelling the shared startup here could leave a
+        // concurrently returning surface waiting on an abandoned loading state.
+        // `shutdown()` remains the single owner that cancels and drains startup.
+        await task.value
         startupTask = nil
     }
 
     private func performStart() async {
         guard !isShutDown, !isStarted, !isStarting else { return }
+        let firstContentInterval = Self.performanceSignposter.beginInterval("FirstContentReady")
+        var didResolveFirstContent = false
+        defer {
+            if didResolveFirstContent {
+                Self.performanceSignposter.endInterval("FirstContentReady", firstContentInterval)
+            } else {
+                Self.performanceSignposter.endInterval(
+                    "FirstContentReady",
+                    firstContentInterval,
+                    "cancelled"
+                )
+            }
+        }
         nowPlayingController.activate()
         isStarting = true
         startupError = nil
@@ -315,35 +343,6 @@ final class PodPinStore: ObservableObject {
             self.database = database
             self.mediaStore = mediaStore
             playbackQueue.configure(repository: database)
-            let interruptedDownloads = try await database.recoverInterruptedDownloads()
-            try Task.checkCancellation()
-            guard !isShutDown else { throw CancellationError() }
-            for itemID in interruptedDownloads {
-                do {
-                    try await mediaStore.removeDownloadedAudio(for: itemID)
-                } catch {
-                    // Keep the marker so the next launch retries filesystem cleanup.
-                    do {
-                        _ = try await database.updateDownloadState(
-                            for: itemID,
-                            state: .downloading
-                        )
-                    } catch {
-                        await AppDiagnostics.shared.record(
-                            level: .warning,
-                            category: "database",
-                            event: "interrupted-download.marker-restore.failed",
-                            error: PresentedError.from(error)
-                        )
-                    }
-                    await AppDiagnostics.shared.record(
-                        level: .warning, category: "storage",
-                        event: "interrupted-download.cleanup.failed",
-                        error: PresentedError.from(error))
-                }
-            }
-            try Task.checkCancellation()
-            guard !isShutDown else { throw CancellationError() }
             isStarted = true
             try await playbackQueue.reload()
             try Task.checkCancellation()
@@ -351,7 +350,7 @@ final class PodPinStore: ObservableObject {
             let refreshedFolders = try await database.allFolders()
             try Task.checkCancellation()
             guard !isShutDown else { throw CancellationError() }
-            cachedFolderTree = makeFolderTree(from: refreshedFolders)
+            cachedFolderTree = try await LibraryFolderTreeBuilder.build(from: refreshedFolders)
             folders = refreshedFolders
             librarySession.selectedCollection = preferences.lastLibraryCollection
             if case .folder(let folderID) = selectedCollection,
@@ -366,39 +365,13 @@ final class PodPinStore: ObservableObject {
             replaceCurrentItemIfNeeded(try await database.currentPlaybackItem())
             try Task.checkCancellation()
             guard !isShutDown else { throw CancellationError() }
-            if let currentItem,
-                currentItem.storageKind == .offline
-            {
-                let containsLocalMedia =
-                    if let relativePath = currentItem.localMediaRelativePath {
-                        await mediaStore.containsFile(at: relativePath)
-                    } else {
-                        false
-                    }
-                if !containsLocalMedia {
-                    _ = try await database.updateDownloadState(for: currentItem.id, state: .failed)
-                    try Task.checkCancellation()
-                    guard !isShutDown else { throw CancellationError() }
-                    replaceCurrentItemIfNeeded(try await database.item(id: currentItem.id))
-                    try Task.checkCancellation()
-                    guard !isShutDown else { throw CancellationError() }
-                }
-            }
-            // A crash can occur after persisting the replacement current item
-            // but before AVFoundation reports it ready. On the next launch it
-            // is current, not upcoming, so repair that narrow transient state.
-            if let currentItem,
-                playbackQueue.session.entries.contains(where: { $0.item.id == currentItem.id })
-            {
-                try await playbackQueue.remove(currentItem.id)
-                try Task.checkCancellation()
-                guard !isShutDown else { throw CancellationError() }
-            }
             playbackController.setRate(preferences.playbackRate)
             playbackController.setVolume(preferences.playbackVolume)
             synchronizePlaybackPresentation()
             openedDatabase = nil
             startupPhase = .ready
+            didResolveFirstContent = true
+            schedulePostReadyMaintenance()
         } catch {
             isStarted = false
             if let openedDatabase {
@@ -414,6 +387,7 @@ final class PodPinStore: ObservableObject {
             mediaStore = nil
             startupError = error.localizedDescription
             startupPhase = .failed(error.localizedDescription)
+            didResolveFirstContent = true
         }
     }
 
@@ -426,6 +400,15 @@ final class PodPinStore: ObservableObject {
     /// remote commands, and downloads explicitly started by the user continue
     /// while another OneBox tool is selected.
     func suspendUI() {
+        isUISurfaceVisible = false
+        if let warmResumeInterval {
+            self.warmResumeInterval = nil
+            Self.performanceSignposter.endInterval(
+                "PodPinWarmResume",
+                warmResumeInterval,
+                "cancelled"
+            )
+        }
         itemRefreshGeneration &+= 1
         itemRefreshTask?.cancel()
         itemRefreshTask = nil
@@ -455,11 +438,13 @@ final class PodPinStore: ObservableObject {
         let transientTasks = [itemRefreshTask, itemLoadMoreTask, browserProfileTask]
             .compactMap { $0 }
         let pendingArtworkTasks = Array(artworkTasks.values)
+        let postReadyMaintenanceTask = self.postReadyMaintenanceTask
         let downloadTask = activeDownloadTask
         let pendingOwnedTasks = Array(ownedTasks.values)
         let pendingOwnedTaskTimeouts = Array(ownedTaskTimeouts.values)
         suspendUI()
         startupTask?.cancel()
+        postReadyMaintenanceTask?.cancel()
         downloadTask?.cancel()
         for task in pendingOwnedTasks {
             task.cancel()
@@ -478,6 +463,10 @@ final class PodPinStore: ObservableObject {
         for task in pendingArtworkTasks {
             await task.value
         }
+        if let postReadyMaintenanceTask {
+            await postReadyMaintenanceTask.value
+        }
+        self.postReadyMaintenanceTask = nil
         if let downloadTask {
             await downloadTask.value
         }
@@ -524,6 +513,123 @@ final class PodPinStore: ObservableObject {
         mediaStore = nil
     }
 
+    private func schedulePostReadyMaintenance() {
+        postReadyMaintenanceTask?.cancel()
+        postReadyMaintenanceTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { postReadyMaintenanceTask = nil }
+            let interruptedDownloads = await recoverInterruptedDownloadsAfterReady()
+            guard !Task.isCancelled else { return }
+            await cleanUpInterruptedDownloads(interruptedDownloads)
+            guard !Task.isCancelled else { return }
+            await repairCurrentOfflineMediaIfNeeded()
+            guard !Task.isCancelled else { return }
+            await repairCurrentQueueEntryIfNeeded()
+        }
+    }
+
+    private func recoverInterruptedDownloadsAfterReady() async -> [UUID] {
+        guard let database else { return [] }
+        do {
+            let itemIDs = try await database.recoverInterruptedDownloads()
+            for itemID in itemIDs {
+                try Task.checkCancellation()
+                if let item = try await database.item(id: itemID) {
+                    applyItemChange(item)
+                }
+            }
+            return itemIDs
+        } catch {
+            guard !isCancellation(error) else { return [] }
+            await AppDiagnostics.shared.record(
+                level: .warning,
+                category: "database",
+                event: "interrupted-download.recovery.failed",
+                error: PresentedError.from(error)
+            )
+            return []
+        }
+    }
+
+    private func cleanUpInterruptedDownloads(_ itemIDs: [UUID]) async {
+        guard let database, let mediaStore else { return }
+        for itemID in itemIDs {
+            do {
+                try Task.checkCancellation()
+                try await mediaStore.removeDownloadedAudio(for: itemID)
+            } catch {
+                // Keep the marker so a later launch retries filesystem cleanup.
+                do {
+                    let restored = try await database.updateDownloadState(
+                        for: itemID,
+                        state: .downloading
+                    )
+                    applyItemChange(restored)
+                } catch {
+                    await AppDiagnostics.shared.record(
+                        level: .warning,
+                        category: "database",
+                        event: "interrupted-download.marker-restore.failed",
+                        error: PresentedError.from(error)
+                    )
+                }
+                await AppDiagnostics.shared.record(
+                    level: .warning,
+                    category: "storage",
+                    event: "interrupted-download.cleanup.failed",
+                    error: PresentedError.from(error)
+                )
+                if isCancellation(error) { return }
+            }
+        }
+    }
+
+    private func repairCurrentOfflineMediaIfNeeded() async {
+        guard let database, let mediaStore, let currentItem,
+            currentItem.storageKind == .offline
+        else { return }
+        do {
+            let containsLocalMedia =
+                if let relativePath = currentItem.localMediaRelativePath {
+                    await mediaStore.containsFile(at: relativePath)
+                } else {
+                    false
+                }
+            guard !containsLocalMedia else { return }
+            _ = try await database.updateDownloadState(for: currentItem.id, state: .failed)
+            try Task.checkCancellation()
+            replaceCurrentItemIfNeeded(try await database.item(id: currentItem.id))
+        } catch {
+            guard !isCancellation(error) else { return }
+            await AppDiagnostics.shared.record(
+                level: .warning,
+                category: "storage",
+                event: "current-item.media-repair.failed",
+                error: PresentedError.from(error)
+            )
+        }
+    }
+
+    private func repairCurrentQueueEntryIfNeeded() async {
+        // A crash can occur after persisting the replacement current item but
+        // before AVFoundation reports it ready. Repair that transient state
+        // after the first screen is already interactive.
+        guard let currentItem,
+            playbackQueue.session.entries.contains(where: { $0.item.id == currentItem.id })
+        else { return }
+        do {
+            try await playbackQueue.remove(currentItem.id)
+        } catch {
+            guard !isCancellation(error) else { return }
+            await AppDiagnostics.shared.record(
+                level: .warning,
+                category: "playback",
+                event: "current-item.queue-repair.failed",
+                error: PresentedError.from(error)
+            )
+        }
+    }
+
     private func selectCollection(_ collection: LibraryCollection) {
         guard collection != librarySession.selectedCollection else { return }
         librarySession.selectedCollection = collection
@@ -557,40 +663,6 @@ final class PodPinStore: ObservableObject {
 
     func folderTree() -> [LibraryFolderNode] {
         cachedFolderTree
-    }
-
-    private func makeFolderTree(from folders: [LibraryFolder]) -> [LibraryFolderNode] {
-        let foldersByID = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
-        let childrenByParent = Dictionary(grouping: folders, by: \.parentID)
-        var depthCache: [UUID: Int] = [:]
-
-        func depth(of folder: LibraryFolder) -> Int {
-            if let cached = depthCache[folder.id] { return cached }
-            var current = folder.parentID
-            var visited: Set<UUID> = [folder.id]
-            var depth = 0
-            while let parentID = current,
-                let parent = foldersByID[parentID],
-                visited.insert(parentID).inserted
-            {
-                depth += 1
-                current = parent.parentID
-            }
-            depthCache[folder.id] = depth
-            return depth
-        }
-
-        var nodesByID: [UUID: LibraryFolderNode] = [:]
-        for folder in folders.sorted(by: { depth(of: $0) > depth(of: $1) }) {
-            let children = (childrenByParent[folder.id] ?? []).compactMap { nodesByID[$0.id] }
-            nodesByID[folder.id] = LibraryFolderNode(
-                id: folder.id,
-                name: folder.displayName,
-                isSystemFolder: folder.isSystemFolder,
-                children: children
-            )
-        }
-        return (childrenByParent[nil] ?? []).compactMap { nodesByID[$0.id] }
     }
 
     func selectedFolderTitle() -> String? {
@@ -1072,6 +1144,13 @@ final class PodPinStore: ObservableObject {
         isExpiryRecovery: Bool = false,
         consumesQueueEntry: Bool = false
     ) async {
+        let playbackStartToken = playbackController.beginPlaybackStart(for: requestedItem.id)
+        var handedPlaybackStartToController = false
+        defer {
+            if !handedPlaybackStartToController {
+                playbackController.cancelPlaybackStart(playbackStartToken)
+            }
+        }
         Self.playbackPerformanceSignposter.emitEvent("play.request")
         if !isExpiryRecovery {
             playbackRecoveryAttempts.remove(requestedItem.id)
@@ -1150,6 +1229,7 @@ final class PodPinStore: ObservableObject {
                 resumeAt: item.playbackPosition,
                 autoplay: true
             )
+            handedPlaybackStartToController = true
             if !consumesQueueEntry {
                 replaceCurrentItemIfNeeded(item)
             }
@@ -1602,16 +1682,35 @@ final class PodPinStore: ObservableObject {
 
             let destination = try await mediaStore.resetMediaDirectory(for: item.id)
             let downloadingItemID = item.id
+            let (progressStream, progressContinuation) = AsyncStream.makeStream(
+                of: DownloadProgressSnapshot.self,
+                bufferingPolicy: .bufferingNewest(1)
+            )
+            let progressTask = Task { @MainActor [weak self] in
+                await self?.publishDownloadProgress(
+                    from: progressStream,
+                    for: downloadingItemID
+                )
+            }
+            defer {
+                progressContinuation.finish()
+                progressTask.cancel()
+            }
             let downloaded = try await importer.download(
                 content: metadata(from: item),
                 to: destination,
                 attempt: attempt
-            ) { [weak self] progress in
-                Task { @MainActor [weak self] in
-                    guard self?.activeDownloadItemID == downloadingItemID else { return }
-                    self?.activeDownloadProgress = progress
-                }
+            ) { progress in
+                progressContinuation.yield(progress)
             }
+            progressContinuation.finish()
+            progressTask.cancel()
+            await progressTask.value
+            guard activeDownloadItemID == downloadingItemID else { throw CancellationError() }
+            activeDownloadProgress = DownloadProgressSnapshot(
+                fraction: 1,
+                bytesPerSecond: nil
+            )
             try Task.checkCancellation()
             let relativePath = mediaStore.relativeAudioPath(for: item.id)
             let expectedURL = try mediaStore.absoluteURL(for: relativePath)
@@ -1644,6 +1743,25 @@ final class PodPinStore: ObservableObject {
                 }
             }
             throw error
+        }
+    }
+
+    private func publishDownloadProgress(
+        from stream: AsyncStream<DownloadProgressSnapshot>,
+        for itemID: UUID
+    ) async {
+        var iterator = stream.makeAsyncIterator()
+        guard let first = await iterator.next(), activeDownloadItemID == itemID else { return }
+        activeDownloadProgress = first
+
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+            } catch {
+                return
+            }
+            guard let latest = await iterator.next(), activeDownloadItemID == itemID else { return }
+            activeDownloadProgress = latest
         }
     }
 
@@ -1710,7 +1828,7 @@ final class PodPinStore: ObservableObject {
         do {
             let database = try requireDatabase()
             let refreshedFolders = try await database.allFolders()
-            cachedFolderTree = makeFolderTree(from: refreshedFolders)
+            cachedFolderTree = try await LibraryFolderTreeBuilder.build(from: refreshedFolders)
             folders = refreshedFolders
         } catch {
             present(error)
@@ -1735,7 +1853,10 @@ final class PodPinStore: ObservableObject {
         await refreshItems(for: request)
     }
 
-    private func refreshItems(for request: ItemRefreshRequest) async {
+    private func refreshItems(
+        for request: ItemRefreshRequest,
+        preservingVisibleContent: Bool = false
+    ) async {
         #if DEBUG || PODPIN_TESTING
             defer { itemRefreshCompletionTestHook?(request.collection) }
         #endif
@@ -1743,13 +1864,30 @@ final class PodPinStore: ObservableObject {
             try await refreshItemsOrThrow(for: request)
         } catch {
             if isCurrentItemRefreshRequest(request) {
-                cachedVisibleItems = []
-                items = []
                 let presented = PresentedError.from(error)
-                itemsPhase = .failed(request.collection, presented)
+                if preservingVisibleContent {
+                    userFacingError = presented
+                } else {
+                    cachedVisibleItems = []
+                    items = []
+                    itemsPhase = .failed(request.collection, presented)
+                }
                 await AppDiagnostics.shared.record(
                     level: .error, category: "library", event: "refresh.failed", error: presented)
             }
+        }
+    }
+
+    private func scheduleWarmRefresh() {
+        itemRefreshGeneration &+= 1
+        let request = itemRefreshRequest()
+        itemRefreshTask?.cancel()
+        itemRefreshTask = Task { @MainActor [weak self] in
+            // Give SwiftUI one turn to publish the cached screen before the
+            // stale-while-revalidate query begins.
+            await Task.yield()
+            guard let self, !Task.isCancelled else { return }
+            await self.refreshItems(for: request, preservingVisibleContent: true)
         }
     }
 
