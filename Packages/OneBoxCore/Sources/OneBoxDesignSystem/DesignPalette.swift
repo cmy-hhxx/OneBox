@@ -1,12 +1,12 @@
 import SwiftUI
 
 enum LightPaletteHex {
-    static let background: UInt32 = 0xFBFBFA
-    static let sidebar: UInt32 = 0xF0F0EE
+    static let background: UInt32 = 0xFCFCFA
+    static let sidebar: UInt32 = 0xF1F0EC
     static let surface: UInt32 = 0xFFFFFF
-    static let surfaceElevated: UInt32 = 0xEEEEEC
-    static let selection: UInt32 = 0xE4E4E2
-    static let border: UInt32 = 0xD8D8D5
+    static let surfaceElevated: UInt32 = 0xECEBE6
+    static let selection: UInt32 = 0xE5E3DC
+    static let border: UInt32 = 0xDDDDD6
     static let textPrimary: UInt32 = 0x1B1C1E
     static let textSecondary: UInt32 = 0x66676A
     static let accent: UInt32 = 0xBC4535

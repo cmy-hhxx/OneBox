@@ -7,4 +7,5 @@ public enum DesignTypography {
     public static let bodyMedium = Font.system(size: 13, weight: .medium)
     public static let metadata = Font.system(size: 12, weight: .regular)
     public static let metric = Font.system(size: 20, weight: .semibold)
+    public static let artworkSymbol = Font.system(size: 48, weight: .light)
 }

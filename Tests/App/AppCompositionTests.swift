@@ -1,7 +1,7 @@
 @preconcurrency import AVFoundation
 import Foundation
-import OneBoxDesignSystem
 @preconcurrency import MediaPlayer
+import OneBoxDesignSystem
 import XCTest
 
 @testable import OneBox

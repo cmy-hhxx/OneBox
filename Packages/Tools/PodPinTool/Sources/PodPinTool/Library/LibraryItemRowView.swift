@@ -25,16 +25,11 @@ struct LibraryItemRowView: View {
         HStack(spacing: DesignMetrics.space12) {
             artwork
             metadataInformation
-            Text(PlaybackTimeFormatter.string(for: item.duration))
-                .font(DesignTypography.metadata.monospacedDigit())
-                .foregroundStyle(palette.textSecondary)
-                .frame(minWidth: DesignMetrics.space48, alignment: .trailing)
             storageControl
-            queueControl
             moreControl
         }
         .padding(.horizontal, DesignMetrics.space8)
-        .padding(.vertical, DesignMetrics.space8)
+        .padding(.vertical, DesignMetrics.space12)
         .frame(minHeight: DesignMetrics.dataRowHeight)
         .background(isSelected ? palette.selection : palette.background)
         .contentShape(Rectangle())
@@ -75,7 +70,7 @@ struct LibraryItemRowView: View {
                 value: showsArtworkControl
             )
         }
-        .frame(width: 40, height: 40)
+        .frame(width: DesignMetrics.space48, height: DesignMetrics.space48)
         .background(palette.surfaceElevated)
         .clipShape(.rect(cornerRadius: DesignMetrics.cornerRadius))
     }
@@ -83,9 +78,10 @@ struct LibraryItemRowView: View {
     private var metadataInformation: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.space4) {
             Text(item.title)
-                .font(isCurrentItem ? DesignTypography.bodyMedium : DesignTypography.body)
+                .font(DesignTypography.bodyMedium)
                 .foregroundStyle(isCurrentItem ? palette.accent : palette.textPrimary)
-                .lineLimit(1)
+                .lineLimit(2)
+                .help(item.title)
 
             Text(subtitle)
                 .font(DesignTypography.metadata)
@@ -115,19 +111,6 @@ struct LibraryItemRowView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .layoutPriority(1)
-    }
-
-    private var queueControl: some View {
-        Button("添加到播放队尾", systemImage: "text.line.first.and.arrowtriangle.forward") {
-            onItemAction(.enqueueLast)
-        }
-        .buttonStyle(.borderless)
-        .labelStyle(.iconOnly)
-        .font(DesignTypography.body)
-        .foregroundStyle(palette.textSecondary)
-        .frame(width: DesignMetrics.titlebarControlSize)
-        .help("添加到播放队尾")
-        .accessibilityLabel("添加到播放队尾")
     }
 
     private var moreControl: some View {
@@ -228,6 +211,9 @@ struct LibraryItemRowView: View {
         var components = [item.author, Optional(item.sourceName)]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+        if let duration = item.duration {
+            components.append(PlaybackTimeFormatter.string(for: duration))
+        }
 
         switch item.storageState {
         case .downloading:

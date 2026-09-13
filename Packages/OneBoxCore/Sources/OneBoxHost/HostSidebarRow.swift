@@ -21,12 +21,23 @@ struct HostSidebarRow: View {
             }
             .padding(.horizontal, DesignMetrics.sidebarTextInset)
             .frame(maxWidth: .infinity, minHeight: DesignMetrics.sidebarRowHeight)
-            .background(isSelected ? palette.selection : .clear)
-            .clipShape(.rect(cornerRadius: DesignMetrics.cornerRadius))
             .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SidebarSelectionStyle(isSelected: isSelected))
         .accessibilityLabel(registration.displayName)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct SidebarSelectionStyle: ButtonStyle {
+    let isSelected: Bool
+    @Environment(\.designPalette) private var palette
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                isSelected || configuration.isPressed ? palette.selection : .clear,
+                in: .rect(cornerRadius: DesignMetrics.cornerRadius)
+            )
     }
 }

@@ -7,14 +7,20 @@ import SwiftUI
 struct ArtworkThumbnailView: View {
     let url: URL?
     let maxPixelSize: Int
+    let placeholderFont: Font
     @State private var image: NSImage?
     @State private var timeoutTaskOwner = CooperativeTaskOwner()
 
     @Environment(\.designPalette) private var palette
 
-    init(url: URL?, maxPixelSize: Int = 120) {
+    init(
+        url: URL?,
+        maxPixelSize: Int = 120,
+        placeholderFont: Font = DesignTypography.sectionTitle
+    ) {
         self.url = url
         self.maxPixelSize = maxPixelSize
+        self.placeholderFont = placeholderFont
     }
 
     var body: some View {
@@ -25,6 +31,7 @@ struct ArtworkThumbnailView: View {
                     .scaledToFill()
             } else {
                 Image(systemName: "waveform")
+                    .font(placeholderFont)
                     .foregroundStyle(palette.textSecondary)
             }
         }

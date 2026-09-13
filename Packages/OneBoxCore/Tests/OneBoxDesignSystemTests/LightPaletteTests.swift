@@ -5,12 +5,12 @@ import XCTest
 final class LightPaletteTests: XCTestCase {
     @MainActor
     func testLockedLightPaletteMatchesDesignContract() {
-        XCTAssertEqual(LightPaletteHex.background, 0xFBFBFA)
-        XCTAssertEqual(LightPaletteHex.sidebar, 0xF0F0EE)
+        XCTAssertEqual(LightPaletteHex.background, 0xFCFCFA)
+        XCTAssertEqual(LightPaletteHex.sidebar, 0xF1F0EC)
         XCTAssertEqual(LightPaletteHex.surface, 0xFFFFFF)
-        XCTAssertEqual(LightPaletteHex.surfaceElevated, 0xEEEEEC)
-        XCTAssertEqual(LightPaletteHex.selection, 0xE4E4E2)
-        XCTAssertEqual(LightPaletteHex.border, 0xD8D8D5)
+        XCTAssertEqual(LightPaletteHex.surfaceElevated, 0xECEBE6)
+        XCTAssertEqual(LightPaletteHex.selection, 0xE5E3DC)
+        XCTAssertEqual(LightPaletteHex.border, 0xDDDDD6)
         XCTAssertEqual(LightPaletteHex.textPrimary, 0x1B1C1E)
         XCTAssertEqual(LightPaletteHex.textSecondary, 0x66676A)
         XCTAssertEqual(LightPaletteHex.accent, 0xBC4535)

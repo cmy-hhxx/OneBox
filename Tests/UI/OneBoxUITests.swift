@@ -40,6 +40,12 @@ final class OneBoxUITests: XCTestCase {
         asciiInspectorToggle.click()
         XCTAssertTrue(asciiInspectorClose.waitForExistence(timeout: 5))
         let inspectorOpenFrame = asciiWorkspace.frame
+        for label in ["打开", "导出 PNG"] {
+            let control = app.buttons[label]
+            XCTAssertTrue(control.isHittable)
+            XCTAssertGreaterThanOrEqual(control.frame.minX, inspectorOpenFrame.minX)
+            XCTAssertLessThanOrEqual(control.frame.maxX, inspectorOpenFrame.maxX)
+        }
         XCTAssertGreaterThan(
             asciiInspectorClose.frame.midX,
             inspectorOpenFrame.midX,
@@ -157,6 +163,13 @@ final class OneBoxUITests: XCTestCase {
         let nowPlayingBack = app.buttons["now-playing.back"]
         XCTAssertTrue(nowPlayingBack.waitForExistence(timeout: 3))
         XCTAssertEqual(nowPlayingBack.label, "返回导入")
+        let outputVolume = app.sliders["now-playing.volume"]
+        XCTAssertFalse(outputVolume.exists, "Output controls must be created on request.")
+        app.buttons["now-playing.output"].click()
+        XCTAssertTrue(outputVolume.waitForExistence(timeout: 3))
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(outputVolume.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(player.exists, "Dismissing output must preserve the player route.")
         let queueToggle = app.buttons["now-playing.queue-toggle"]
         XCTAssertTrue(queueToggle.waitForExistence(timeout: 3))
         let queueClosedPlayerFrame = player.frame

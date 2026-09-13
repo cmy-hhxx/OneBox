@@ -6,6 +6,8 @@ import SwiftUI
 
 /// Layout values for the focused player inside the OneBox content area.
 struct NowPlayingLayoutMetrics: Equatable {
+    let isHorizontal: Bool
+    let usesCompactTypography: Bool
     let artworkSize: CGFloat
     let contentWidth: CGFloat
     let artworkMetadataSpacing: CGFloat
@@ -13,11 +15,16 @@ struct NowPlayingLayoutMetrics: Equatable {
     let progressTransportSpacing: CGFloat
 
     init(availableSize: CGSize) {
-        contentWidth = min(420, max(280, availableSize.width - 32))
-        artworkSize = min(
-            240,
-            max(156, min(availableSize.height * 0.46, contentWidth * 0.60))
-        )
+        isHorizontal = availableSize.width >= 600
+        usesCompactTypography = !isHorizontal && availableSize.height < 400
+        if isHorizontal {
+            artworkSize = min(256, max(120, availableSize.height * 0.75))
+            contentWidth = min(380, availableSize.width - artworkSize - 32)
+        } else {
+            contentWidth = min(420, max(0, availableSize.width))
+            let detailsHeight: CGFloat = usesCompactTypography ? 200 : 260
+            artworkSize = min(contentWidth, min(240, max(80, availableSize.height - detailsHeight)))
+        }
 
         let isCompactHeight = availableSize.height < 480
         artworkMetadataSpacing = isCompactHeight ? 12 : 16
@@ -198,52 +205,69 @@ private struct NowPlayingHero: View {
         snapshot: PlaybackIdentitySnapshot,
         metrics: NowPlayingLayoutMetrics
     ) -> some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
+        Group {
+            if metrics.isHorizontal {
+                HStack(spacing: DesignMetrics.space32) {
+                    artwork(url: snapshot.artworkURL, size: metrics.artworkSize)
+                    playbackDetails(snapshot: snapshot, metrics: metrics)
+                }
+            } else {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
 
-            artwork(url: snapshot.artworkURL, size: metrics.artworkSize)
+                    artwork(url: snapshot.artworkURL, size: metrics.artworkSize)
 
-            Spacer().frame(height: metrics.artworkMetadataSpacing)
+                    Spacer().frame(height: metrics.artworkMetadataSpacing)
 
-            metadata(snapshot)
+                    playbackDetails(snapshot: snapshot, metrics: metrics)
 
-            Spacer().frame(height: metrics.metadataProgressSpacing)
-
-            progress(snapshot)
-
-            Spacer().frame(height: metrics.progressTransportSpacing)
-
-            transport(snapshot)
-
-            Spacer(minLength: 0)
+                    Spacer(minLength: 0)
+                }
+                .frame(width: metrics.contentWidth)
+            }
         }
-        .frame(width: metrics.contentWidth)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func artwork(url: URL?, size: CGFloat) -> some View {
-        ArtworkThumbnailView(url: url, maxPixelSize: 900)
-            .frame(width: size, height: size)
-            .background(palette.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius))
-            .overlay {
-                RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius)
-                    .strokeBorder(palette.border, lineWidth: 1)
-            }
-            .id(url?.absoluteString ?? "no-artwork")
-            .accessibilityHidden(true)
+    private func playbackDetails(
+        snapshot: PlaybackIdentitySnapshot,
+        metrics: NowPlayingLayoutMetrics
+    ) -> some View {
+        VStack(spacing: 0) {
+            metadata(snapshot, compact: metrics.usesCompactTypography)
+            Spacer().frame(height: metrics.metadataProgressSpacing)
+            progress(snapshot)
+            Spacer().frame(height: metrics.progressTransportSpacing)
+            transport(snapshot)
+        }
+        .frame(width: metrics.contentWidth)
     }
 
-    private func metadata(_ snapshot: PlaybackIdentitySnapshot) -> some View {
+    private func artwork(url: URL?, size: CGFloat) -> some View {
+        ArtworkThumbnailView(
+            url: url, maxPixelSize: 900, placeholderFont: DesignTypography.artworkSymbol
+        )
+        .frame(width: size, height: size)
+        .background(palette.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius)
+                .strokeBorder(palette.border, lineWidth: 1)
+        }
+        .id(url?.absoluteString ?? "no-artwork")
+        .accessibilityHidden(true)
+    }
+
+    private func metadata(_ snapshot: PlaybackIdentitySnapshot, compact: Bool) -> some View {
         let item = snapshot.item
         let title = item?.title ?? "暂无播放内容"
 
         return VStack(alignment: .leading, spacing: DesignMetrics.space4) {
             HStack(alignment: .firstTextBaseline, spacing: DesignMetrics.space8) {
                 Text(title)
-                    .font(DesignTypography.sectionTitle)
+                    .font(compact ? DesignTypography.sectionTitle : DesignTypography.metric)
                     .foregroundStyle(palette.textPrimary)
-                    .lineLimit(2)
+                    .lineLimit(compact ? 2 : 3)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help(title)
 
@@ -263,11 +287,6 @@ private struct NowPlayingHero: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: DesignMetrics.space8) {
-                Text(item?.importedAt.formatted(date: .long, time: .omitted) ?? "未选择内容")
-                    .lineLimit(1)
-
-                Spacer(minLength: DesignMetrics.space8)
-
                 Label(
                     stateLabel(for: snapshot.phase), systemImage: stateSymbol(for: snapshot.phase)
                 )
@@ -343,13 +362,13 @@ private struct NowPlayingHero: View {
     }
 
     private func transport(_ snapshot: PlaybackIdentitySnapshot) -> some View {
-        HStack(spacing: DesignMetrics.space8) {
+        HStack(spacing: 0) {
             NowPlayingRateMenu(
                 rate: snapshot.rate,
                 onSetRate: onSetRate
             )
 
-            Spacer(minLength: DesignMetrics.space8)
+            Spacer(minLength: 0)
 
             NowPlayingTransportButton(
                 symbol: "gobackward.15",
@@ -370,6 +389,10 @@ private struct NowPlayingHero: View {
                 enabled: canControlPlayback(snapshot),
                 action: onSkipForward
             )
+            Spacer(minLength: 0)
+            // Match the rate control's width so transport stays centered.
+            Spacer(minLength: 0)
+                .frame(width: 44)
         }
         .frame(maxWidth: .infinity)
     }
@@ -386,36 +409,58 @@ private struct NowPlayingOutputControl: View {
     let onCommitVolume: () -> Void
 
     @Environment(\.designPalette) private var palette
+    @State private var isPresented = false
 
     var body: some View {
-        HStack(spacing: DesignMetrics.space8) {
-            NowPlayingRoutePicker(
-                player: outputController.routePlayer,
-                tintColor: NSColor(palette.textSecondary)
-            )
-            .frame(width: 24, height: 24)
-            .accessibilityLabel("选择音频输出设备")
-            .help("选择音频输出设备")
+        Button("音量与输出", systemImage: speakerSymbol) {
+            isPresented.toggle()
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .frame(width: 32, height: 32)
+        .accessibilityIdentifier("now-playing.output")
+        .accessibilityValue("\(volumePercentage)%")
+        .help("音量与输出")
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            outputPanel
+        }
+    }
 
-            Rectangle()
-                .fill(palette.border)
-                .frame(width: 1, height: 20)
-                .accessibilityHidden(true)
+    private var outputPanel: some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.space16) {
+            HStack {
+                Text("音量与输出")
+                    .font(DesignTypography.sectionTitle)
+                Spacer()
+                Text("\(volumePercentage)%")
+                    .font(DesignTypography.metadata.monospacedDigit())
+                    .foregroundStyle(palette.textSecondary)
+            }
 
             Slider(value: volumeBinding, in: 0...1, onEditingChanged: volumeEditingChanged)
-                .controlSize(.small)
+                .controlSize(.regular)
                 .accessibilityIdentifier("now-playing.volume")
                 .accessibilityLabel("播放音量")
                 .accessibilityValue("\(volumePercentage)%")
 
-            Image(systemName: speakerSymbol)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(palette.textSecondary)
-                .frame(width: 20)
-                .accessibilityHidden(true)
+            HStack(spacing: DesignMetrics.space8) {
+                Text("输出设备")
+                    .font(DesignTypography.body)
+                Spacer()
+                // AVRoutePickerView performs device discovery during its first layout.
+                // Create it only when the user asks for output controls.
+                NowPlayingRoutePicker(
+                    player: outputController.routePlayer,
+                    tintColor: NSColor(palette.textSecondary)
+                )
+                .frame(width: 24, height: 24)
+                .accessibilityLabel("选择音频输出设备")
+                .help("选择音频输出设备")
+            }
         }
-        .frame(width: 196, height: 32)
-        .accessibilityIdentifier("now-playing.output")
+        .foregroundStyle(palette.textPrimary)
+        .padding(DesignMetrics.space16)
+        .frame(width: 248)
     }
 
     private var volumeBinding: Binding<Double> {
@@ -457,7 +502,9 @@ private struct NowPlayingRoutePicker: NSViewRepresentable {
     }
 
     func updateNSView(_ picker: AVRoutePickerView, context: Context) {
-        picker.player = player
+        if picker.player !== player {
+            picker.player = player
+        }
         updateButtonColors(for: picker)
     }
 
@@ -686,7 +733,7 @@ private struct NowPlayingRateMenu: View {
             Text(rateLabel(rate))
                 .font(DesignTypography.bodyMedium)
                 .foregroundStyle(palette.textPrimary)
-                .frame(width: 52, height: 44)
+                .frame(width: 44, height: 44)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -750,11 +797,12 @@ private struct NowPlayingPlayButton: View {
                     .font(.system(size: 18, weight: .semibold))
                 }
             }
-            .frame(width: 20, height: 20)
+            .frame(width: 48, height: 48)
+            .foregroundStyle(palette.surface)
+            .background(palette.accent, in: Circle())
+            .contentShape(Circle())
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .frame(width: 44, height: 44)
+        .buttonStyle(.plain)
         .disabled(!enabled)
         .accessibilityIdentifier("now-playing.play")
         .accessibilityLabel(hasPlaybackIntent ? "暂停" : "播放")

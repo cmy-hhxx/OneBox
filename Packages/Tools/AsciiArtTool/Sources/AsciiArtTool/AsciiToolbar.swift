@@ -14,6 +14,17 @@ struct AsciiToolbar: View {
     @Environment(\.designPalette) private var palette
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            toolbar(compact: false)
+                .frame(minWidth: 680)
+            toolbar(compact: true)
+        }
+        .font(DesignTypography.bodyMedium)
+        .controlSize(.regular)
+        .frame(maxWidth: .infinity, minHeight: DesignMetrics.titlebarControlSize)
+    }
+
+    private func toolbar(compact: Bool) -> some View {
         HStack(spacing: DesignMetrics.space16) {
             HStack(spacing: DesignMetrics.space8) {
                 Button("打开", systemImage: "folder", action: open)
@@ -30,47 +41,77 @@ struct AsciiToolbar: View {
             }
 
             HStack(spacing: DesignMetrics.space8) {
-                Picker("画布比例", selection: $session.settings.canvasPreset) {
-                    ForEach(AsciiCanvasPreset.allCases) { preset in
-                        Text(preset.rawValue).tag(preset)
+                if compact {
+                    Menu {
+                        Picker("画布比例", selection: $session.settings.canvasPreset) {
+                            ForEach(AsciiCanvasPreset.allCases) { preset in
+                                Text(preset.rawValue).tag(preset)
+                            }
+                        }
+                        Picker("配色预设", selection: $session.settings.palettePreset) {
+                            ForEach(AsciiPalettePreset.allCases) { preset in
+                                Text(preset.rawValue).tag(preset)
+                            }
+                        }
+                        Picker("动画效果", selection: $session.selectedAnimation) {
+                            ForEach(AsciiAnimation.allCases) { animation in
+                                Text(animation.rawValue).tag(animation)
+                            }
+                        }
+                    } label: {
+                        Label("画布", systemImage: "slider.horizontal.3")
                     }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .help("画布比例")
-                .accessibilityLabel("画布比例")
-                .accessibilityValue(session.settings.canvasPreset.rawValue)
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .accessibilityLabel("画布预设")
+                    .accessibilityValue(
+                        "\(session.settings.canvasPreset.rawValue)，\(session.settings.palettePreset.rawValue)，\(session.settings.animation.rawValue)"
+                    )
+                } else {
+                    Picker("画布比例", selection: $session.settings.canvasPreset) {
+                        ForEach(AsciiCanvasPreset.allCases) { preset in
+                            Text(preset.rawValue).tag(preset)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("画布比例")
+                    .accessibilityLabel("画布比例")
+                    .accessibilityValue(session.settings.canvasPreset.rawValue)
 
-                Picker("配色预设", selection: $session.settings.palettePreset) {
-                    ForEach(AsciiPalettePreset.allCases) { preset in
-                        Text(preset.rawValue).tag(preset)
+                    Picker("配色预设", selection: $session.settings.palettePreset) {
+                        ForEach(AsciiPalettePreset.allCases) { preset in
+                            Text(preset.rawValue).tag(preset)
+                        }
                     }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("配色预设")
+                    .accessibilityLabel("配色预设")
+                    .accessibilityValue(session.settings.palettePreset.rawValue)
+                    .foregroundStyle(palette.textPrimary)
+                    .tint(palette.textPrimary)
                 }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .fixedSize()
-                .help("配色预设")
-                .accessibilityLabel("配色预设")
-                .accessibilityValue(session.settings.palettePreset.rawValue)
-                .foregroundStyle(palette.textPrimary)
-                .tint(palette.textPrimary)
             }
 
             HStack(spacing: DesignMetrics.space8) {
-                Picker("动画效果", selection: $session.selectedAnimation) {
-                    ForEach(AsciiAnimation.allCases) { animation in
-                        Text(animation.rawValue).tag(animation)
+                if !compact {
+                    Picker("动画效果", selection: $session.selectedAnimation) {
+                        ForEach(AsciiAnimation.allCases) { animation in
+                            Text(animation.rawValue).tag(animation)
+                        }
                     }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("动画效果")
+                    .accessibilityLabel("动画效果")
+                    .accessibilityValue(session.settings.animation.rawValue)
+                    .foregroundStyle(palette.textPrimary)
+                    .tint(palette.textPrimary)
                 }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .fixedSize()
-                .help("动画效果")
-                .accessibilityLabel("动画效果")
-                .accessibilityValue(session.settings.animation.rawValue)
-                .foregroundStyle(palette.textPrimary)
-                .tint(palette.textPrimary)
 
                 Button(
                     session.isAnimationActive ? "暂停" : "播放",
@@ -111,6 +152,7 @@ struct AsciiToolbar: View {
                     .keyboardShortcut("e", modifiers: .command)
                     .disabled(session.source == nil || !session.isMetalReady || isExporting)
                     .accessibilityInputLabels(["导出 PNG", "导出静态图片"])
+                    .fixedSize()
 
                 if isExporting {
                     ProgressView()
@@ -119,13 +161,7 @@ struct AsciiToolbar: View {
                 }
             }
         }
-        .font(DesignTypography.bodyMedium)
-        .controlSize(.regular)
-        .frame(
-            maxWidth: .infinity,
-            minHeight: DesignMetrics.titlebarControlSize,
-            alignment: .leading
-        )
+        .fixedSize(horizontal: false, vertical: true)
     }
 
 }

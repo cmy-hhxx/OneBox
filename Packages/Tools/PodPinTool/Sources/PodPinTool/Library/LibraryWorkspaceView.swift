@@ -309,10 +309,9 @@ struct LibraryWorkspaceView<
         } label: {
             HStack(spacing: DesignMetrics.space8) {
                 Text(currentCollectionTitle)
-                    .font(DesignTypography.bodyMedium)
+                    .font(DesignTypography.sectionTitle)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Spacer(minLength: 0)
                 Image(systemName: "chevron.down")
                     .font(DesignTypography.metadata)
                     .accessibilityHidden(true)
@@ -320,16 +319,12 @@ struct LibraryWorkspaceView<
             .foregroundStyle(palette.textPrimary)
             .padding(.horizontal, DesignMetrics.space8)
             .frame(
-                minWidth: 132,
                 maxWidth: 220,
                 minHeight: DesignMetrics.titlebarControlSize,
                 alignment: .leading
             )
-            .background(palette.surface, in: .rect(cornerRadius: DesignMetrics.cornerRadius))
-            .overlay {
-                RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius)
-                    .strokeBorder(palette.border, lineWidth: 1)
-            }
+            .fixedSize(horizontal: true, vertical: false)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityFocused($isCollectionPickerButtonFocused)
