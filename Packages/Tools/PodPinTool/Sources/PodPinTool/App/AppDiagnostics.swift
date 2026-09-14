@@ -37,6 +37,7 @@ struct PresentedError: Error, Equatable, Identifiable, Sendable {
 
     static func from(_ error: Error) -> PresentedError {
         if let presented = error as? PresentedError { return presented }
+        if let failure = error as? ContentImportFailure { return from(failure.presentation) }
 
         let description = AppDiagnostics.redact(error.localizedDescription)
         let code: PodPinErrorCode

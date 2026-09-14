@@ -1,15 +1,19 @@
 import Metal
+import OneBoxRuntime
 
 @MainActor
 final class AsciiRenderCache {
+    let diagnostics: ToolDiagnostics
     private let deviceProvider: any AsciiMetalDeviceProviding
     private let asyncWorkOwner: AsciiAsyncWorkOwner
     private var pipeline: AsciiMetalPipeline?
 
     init(
         deviceProvider: any AsciiMetalDeviceProviding,
-        asyncWorkOwner: AsciiAsyncWorkOwner = AsciiAsyncWorkOwner()
+        asyncWorkOwner: AsciiAsyncWorkOwner = AsciiAsyncWorkOwner(),
+        diagnostics: ToolDiagnostics = .disabled
     ) {
+        self.diagnostics = diagnostics
         self.deviceProvider = deviceProvider
         self.asyncWorkOwner = asyncWorkOwner
     }

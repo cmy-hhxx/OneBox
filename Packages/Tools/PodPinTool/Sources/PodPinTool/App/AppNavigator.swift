@@ -1,4 +1,5 @@
 import OSLog
+import OneBoxDesignSystem
 import SwiftUI
 
 enum PodPinRouteDirection: Equatable, Sendable {
@@ -137,7 +138,7 @@ final class AppNavigator: ObservableObject {
     ) {
         let interval = Self.signposter.beginInterval(name)
         withAnimation(
-            .easeOut(duration: reduceMotion ? 0.1 : 0.18),
+            reduceMotion ? .easeOut(duration: 0.1) : DesignMotion.panel,
             completionCriteria: .logicallyComplete,
             updates
         ) {

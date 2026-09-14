@@ -113,7 +113,9 @@ actor DouyinContentAdapter: ContentSourceAdapter {
         } catch let DouyinPageLoadError.timeout(diagnostic) {
             throw ContentImportError.platformUnavailable("抖音页面加载超时，请稍后重试。（\(diagnostic)）")
         } catch {
-            throw ContentImportError.platformUnavailable("抖音页面运行时暂时不可用。")
+            throw ContentImportFailure(
+                underlying: error, presentation: .platformUnavailable("抖音页面运行时暂时不可用。")
+            )
         }
     }
 

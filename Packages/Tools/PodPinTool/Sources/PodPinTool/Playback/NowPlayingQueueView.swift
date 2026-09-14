@@ -24,10 +24,14 @@ struct NowPlayingQueueView: View {
 
                     Spacer(minLength: DesignMetrics.space8)
 
-                    Button("清空队列", role: .destructive) {
+                    Button(role: .destructive) {
                         isClearConfirmationPresented = true
+                    } label: {
+                        Text("清空队列")
+                            .foregroundStyle(palette.negative)
                     }
-                    .font(DesignTypography.body)
+                    .buttonStyle(ToolActionButtonStyle(kind: .quiet, compact: true))
+                    .help("移除全部待播项目，保留当前播放")
                 }
             }
 
@@ -55,10 +59,6 @@ struct NowPlayingQueueView: View {
                             Rectangle()
                                 .fill(palette.border)
                                 .frame(height: 1)
-                                .padding(
-                                    .leading,
-                                    DesignMetrics.space48 + DesignMetrics.space12
-                                )
                                 .accessibilityHidden(true)
                         }
                     }
@@ -103,10 +103,10 @@ struct NowPlayingQueueView: View {
 
             Button("重试", action: onRetry)
                 .font(DesignTypography.bodyMedium)
-                .buttonStyle(.bordered)
+                .buttonStyle(ToolActionButtonStyle(kind: .secondary, compact: true))
         }
         .padding(DesignMetrics.space12)
-        .background(palette.surfaceElevated)
+        .background(palette.negativeSurface, in: .rect(cornerRadius: DesignMetrics.cornerRadius))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("队列载入失败。\(message)")
         .accessibilityAction(named: "重试", onRetry)
@@ -115,8 +115,9 @@ struct NowPlayingQueueView: View {
     private var emptyState: some View {
         VStack(spacing: DesignMetrics.space8) {
             Image(systemName: "text.line.first.and.arrowtriangle.forward")
-                .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(palette.textSecondary)
+                .font(.system(size: 24, weight: .regular))
+                .foregroundStyle(palette.accent)
+                .padding(DesignMetrics.space16)
                 .accessibilityHidden(true)
 
             Text("队列为空")
@@ -145,6 +146,9 @@ private struct NowPlayingQueueRow: View {
     let onMove: (UUID, Int) -> Void
 
     @Environment(\.designPalette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.oneBoxAccessibilityReduceMotionOverride) private var reduceMotionOverride
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: DesignMetrics.space8) {
@@ -153,16 +157,16 @@ private struct NowPlayingQueueRow: View {
             } label: {
                 HStack(spacing: DesignMetrics.space12) {
                     ArtworkThumbnailView(url: artworkURL, maxPixelSize: 180)
-                        .frame(width: 48, height: 48)
+                        .frame(width: 40, height: 40)
                         .background(palette.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius))
+                        .clipShape(RoundedRectangle(cornerRadius: DesignMetrics.space12))
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: DesignMetrics.space4) {
                         Text(entry.item.title)
                             .font(DesignTypography.bodyMedium)
                             .foregroundStyle(palette.textPrimary)
-                            .lineLimit(1)
+                            .lineLimit(2)
 
                         Text(subtitle)
                             .font(DesignTypography.metadata)
@@ -175,6 +179,7 @@ private struct NowPlayingQueueRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("播放 \(entry.item.title)")
+            .help("播放 \(entry.item.title)")
 
             Menu {
                 Button("立即播放", systemImage: "play.fill") {
@@ -205,23 +210,44 @@ private struct NowPlayingQueueRow: View {
                     .foregroundStyle(palette.textSecondary)
                     .frame(width: 32, height: 32)
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button)
+            .buttonStyle(ToolIconButtonStyle())
             .menuIndicator(.hidden)
             .accessibilityLabel("\(entry.item.title) 的队列操作")
             .help("队列项目操作")
         }
-        .padding(.vertical, DesignMetrics.space4)
-        .frame(minHeight: DesignMetrics.dataRowHeight)
+        .padding(.vertical, DesignMetrics.space12)
+        .frame(minHeight: 64)
+        .background(isHovered ? palette.surfaceElevated : palette.surface)
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .animation(
+            (reduceMotionOverride ?? reduceMotion) ? nil : DesignMotion.hover, value: isHovered
+        )
         .contextMenu {
             Button("立即播放", action: { onPlay(entry.id) })
             Button("从队列移除", role: .destructive, action: { onRemove(entry.id) })
         }
     }
 
+    private var authorOrSource: String {
+        if let author = entry.item.author?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !author.isEmpty
+        {
+            return author
+        }
+        switch entry.item.platform {
+        case .bilibili: return "哔哩哔哩"
+        case .douyin: return "抖音"
+        case .fireside: return "Fireside"
+        case .xiaoyuzhou: return "小宇宙"
+        case .fixture: return "PodPin 资料库"
+        }
+    }
+
     private var subtitle: String {
         [
-            entry.item.importedAt.formatted(date: .long, time: .omitted),
+            authorOrSource,
             entry.item.duration.map(PlaybackTimeFormatter.string(for:)),
         ]
         .compactMap { $0 }
@@ -249,7 +275,7 @@ struct NowPlayingBottomSwitcher: View {
             .foregroundStyle(queueIsPresented ? palette.accent : palette.textSecondary)
             .frame(width: 32, height: 32)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(ToolIconButtonStyle(isSelected: queueIsPresented))
         .focused(keyboardFocus)
         .accessibilityFocused(accessibilityFocus)
         .accessibilityLabel(queueIsPresented ? "隐藏继续播放" : "显示继续播放")

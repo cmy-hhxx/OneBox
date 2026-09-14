@@ -32,23 +32,20 @@ struct StockWatchDataInspectorSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.space12) {
-            Text("数据")
-                .font(DesignTypography.sectionTitle)
-                .accessibilityAddTraits(.isHeader)
-
+        InspectorSection(title: "行情数据") {
             VStack(alignment: .leading, spacing: DesignMetrics.space4) {
                 Text("刷新间隔")
                     .font(DesignTypography.metadata)
                     .foregroundStyle(palette.textSecondary)
-                Picker("刷新间隔", selection: $preferences.refreshInterval) {
-                    Text("15 秒").tag(15)
-                    Text("30 秒").tag(30)
-                    Text("60 秒").tag(60)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .accessibilityLabel("刷新间隔")
+                ToolSegmentedPicker(
+                    "刷新间隔",
+                    selection: $preferences.refreshInterval,
+                    options: [
+                        ToolSegment("15 秒", value: 15),
+                        ToolSegment("30 秒", value: 30),
+                        ToolSegment("60 秒", value: 60),
+                    ]
+                )
             }
 
             dataRow(
@@ -61,12 +58,6 @@ struct StockWatchDataInspectorSection: View {
                 value: lastRefreshText,
                 systemImage: "clock"
             )
-            dataRow(
-                title: "缓存分钟数",
-                value: "\(diagnosticsPresentation.quoteBarCount.formatted()) 分钟",
-                systemImage: "clock.arrow.circlepath"
-            )
-
             Button(action: refreshData) {
                 if isRefreshingData {
                     ProgressView()
@@ -75,15 +66,23 @@ struct StockWatchDataInspectorSection: View {
                     Label("刷新行情与诊断", systemImage: "arrow.clockwise")
                 }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(ToolActionButtonStyle(kind: .secondary, compact: true))
             .disabled(isRefreshingData)
 
-            databasePath
-
-            Button("清空行情缓存…", systemImage: "trash", role: .destructive) {
-                isConfirmingCacheClear = true
+            DisclosureGroup("本地缓存与存储") {
+                VStack(alignment: .leading, spacing: DesignMetrics.space12) {
+                    Text("已缓存 \(diagnosticsPresentation.quoteBarCount.formatted()) 分钟行情")
+                        .font(DesignTypography.metadata)
+                        .foregroundStyle(palette.textSecondary)
+                    databasePath
+                    Button("清空行情缓存…", systemImage: "trash", role: .destructive) {
+                        isConfirmingCacheClear = true
+                    }
+                    .buttonStyle(ToolActionButtonStyle(kind: .quiet, compact: true))
+                }
+                .padding(.top, DesignMetrics.space8)
             }
-            .buttonStyle(.bordered)
+            .font(DesignTypography.metadata)
         }
         .task {
             await store.refreshQuoteBarCount()
@@ -114,11 +113,11 @@ struct StockWatchDataInspectorSection: View {
                 .accessibilityLabel("数据库路径")
                 .accessibilityValue(databasePathValue)
 
-            HStack(spacing: DesignMetrics.space8) {
+            VStack(alignment: .leading, spacing: DesignMetrics.space4) {
                 Button("复制路径", systemImage: "doc.on.doc", action: copyDatabasePath)
                 Button("显示目录", systemImage: "folder", action: revealDatabaseDirectory)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(ToolActionButtonStyle(kind: .quiet, compact: true))
             .disabled(databasePathValue.isEmpty)
 
             if let databasePathActionMessage {
@@ -154,7 +153,9 @@ struct StockWatchDataInspectorSection: View {
         guard let lastRefresh = quotePresentation.snapshot.lastRefresh else {
             return tr("尚未刷新")
         }
-        return lastRefresh.formatted(date: .abbreviated, time: .shortened)
+        return lastRefresh.formatted(
+            Date.FormatStyle(date: .numeric, time: .shortened, locale: Locale(identifier: "zh_CN"))
+        )
     }
 
     private var databasePathValue: String {

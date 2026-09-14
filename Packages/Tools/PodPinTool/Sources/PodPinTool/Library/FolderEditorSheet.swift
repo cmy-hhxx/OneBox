@@ -85,9 +85,7 @@ struct FolderEditorSheet: View {
             Text(request.title)
                 .font(DesignTypography.sectionTitle)
 
-            TextField("文件夹名称", text: $name)
-                .textFieldStyle(.roundedBorder)
-                .focused($isNameFocused)
+            ToolTextField("文件夹名称", text: $name, focus: $isNameFocused)
                 .disabled(isSaving)
                 .onSubmit(save)
                 .accessibilityIdentifier("library.folder-editor.name")
@@ -115,11 +113,12 @@ struct FolderEditorSheet: View {
 
             HStack {
                 Button("取消") { dismiss() }
+                    .buttonStyle(ToolActionButtonStyle(kind: .secondary))
                     .keyboardShortcut(.cancelAction)
                     .disabled(isSaving)
                 Spacer()
                 Button(request.createsFolder ? "创建" : "保存", action: save)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(ToolActionButtonStyle(kind: .primary))
                     .tint(palette.accent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(

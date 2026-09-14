@@ -8,16 +8,18 @@ struct SidebarToggleButton: View {
     @Environment(\.designPalette) private var palette
 
     var body: some View {
-        Button(accessibilityTitle, systemImage: "sidebar.left", action: action)
-            .labelStyle(.iconOnly)
-            .font(.system(size: 16, weight: .regular))
-            .foregroundStyle(palette.textSecondary)
-            .frame(
-                width: DesignMetrics.titlebarControlSize,
-                height: DesignMetrics.titlebarControlSize
-            )
-            .contentShape(.rect)
-            .buttonStyle(.plain)
-            .help(accessibilityTitle)
+        Button(action: action) {
+            SidebarSymbol(name: "sidebar.left", size: 18)
+        }
+        .foregroundStyle(palette.textSecondary)
+        .frame(
+            width: DesignMetrics.titlebarControlSize,
+            height: DesignMetrics.titlebarControlSize
+        )
+        .contentShape(.rect)
+        .buttonStyle(ToolIconButtonStyle())
+        .accessibilityLabel(accessibilityTitle)
+        .accessibilityIdentifier("sidebar.left")
+        .help(accessibilityTitle)
     }
 }

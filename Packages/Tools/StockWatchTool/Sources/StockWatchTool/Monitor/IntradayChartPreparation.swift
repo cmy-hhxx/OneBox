@@ -1,21 +1,9 @@
 import Foundation
 
 struct IntradayChartPoint: Equatable, Sendable {
+    let time: Date
     let progress: Double
     let close: Double
-}
-
-enum IntradaySegmentColoring {
-    static func roles(
-        closes: [Double],
-        market: Market
-    ) -> [MarketColorRole] {
-        guard closes.count > 1 else { return [] }
-
-        return zip(closes, closes.dropFirst()).map { previous, current in
-            market.colorRole(forChange: current - previous)
-        }
-    }
 }
 
 struct IntradayChartPreparation: Equatable, Sendable {
@@ -50,7 +38,7 @@ struct IntradayChartPreparation: Equatable, Sendable {
 
             let index = points.count
             let close = point.close
-            points.append(IntradayChartPoint(progress: progress, close: close))
+            points.append(IntradayChartPoint(time: point.time, progress: progress, close: close))
             minimum = min(minimum, close)
             maximum = max(maximum, close)
 
@@ -81,7 +69,7 @@ struct IntradayChartPreparation: Equatable, Sendable {
         self.points = points
         let padding = max(
             (maximum - minimum) * 0.14,
-            max(abs(previousClose) * 0.0008, 0.01)
+            max(abs(previousClose) * 0.0008, Double.ulpOfOne)
         )
         low = minimum - padding
         high = maximum + padding
@@ -117,11 +105,9 @@ struct IntradayChartPreparation: Equatable, Sendable {
 struct PreparedIntradayChart: Equatable, Sendable {
     let points: [IntradayChartPoint]
     let closes: [Double]
-    let segmentRoles: [MarketColorRole]
     let low: Double
     let high: Double
     let previousClose: Double
-    let fallbackColorRole: MarketColorRole
     let reviewMarkers: IntradayReviewMarkerSelection?
 
     init(instrument: Instrument, quote: QuoteSnapshot) {
@@ -138,14 +124,9 @@ struct PreparedIntradayChart: Equatable, Sendable {
 
         points = preparation.points
         closes = preparation.points.map(\.close)
-        segmentRoles = IntradaySegmentColoring.roles(
-            closes: closes,
-            market: instrument.market
-        )
         low = preparation.low
         high = preparation.high
         previousClose = quote.previousClose
-        fallbackColorRole = instrument.market.colorRole(forChange: quote.changePercent)
         reviewMarkers = preparation.reviewMarkers
     }
 }

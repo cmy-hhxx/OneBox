@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import OSLog
 import Observation
+import OneBoxRuntime
 
 #if DEBUG || STOCKWATCH_BENCHMARK
     enum AlertSettingsPersistenceEvent: Sendable, Equatable {
@@ -61,6 +62,7 @@ final class MonitorStore: ObservableObject {
 
     private var watchlist: Watchlist { watchlistPresentation.watchlist }
 
+    private let diagnostics: ToolDiagnostics
     private let client: any MarketDataClient
     private let database: MarketDatabase
     private let preferences: StockWatchPreferences
@@ -141,9 +143,11 @@ final class MonitorStore: ObservableObject {
         refreshNow: @escaping @Sendable (Market) -> Date = { _ in Date() },
         databaseClose: @escaping @Sendable (MarketDatabase) async throws -> Void = {
             try $0.close()
-        }
+        },
+        diagnostics: ToolDiagnostics = .disabled
     ) {
         self.client = client
+        self.diagnostics = diagnostics
         self.database = database
         self.preferences = preferences
         self.diagnosticsPresentation = DiagnosticsPresentationSession(
@@ -154,7 +158,8 @@ final class MonitorStore: ObservableObject {
             client: client,
             database: database,
             maximumConcurrentRequests: maximumConcurrentRefreshes,
-            now: refreshNow
+            now: refreshNow,
+            diagnostics: diagnostics
         )
         self.alertDismissalDelay = alertDismissalDelay
         self.alertDismissalNow = alertDismissalNow
@@ -193,6 +198,7 @@ final class MonitorStore: ObservableObject {
             do {
                 cachedQuotes = try await database.loadLatestQuotes(for: instruments)
             } catch {
+                diagnostics.record(error, operation: "storage.load-quotes")
                 throw StockWatchStartupError.quoteCacheUnavailable
             }
             try Task.checkCancellation()
@@ -286,6 +292,7 @@ final class MonitorStore: ObservableObject {
             hasClosedDatabase = true
             databaseCloseMessage = nil
         } catch {
+            diagnostics.record(error, operation: "storage.close")
             databaseCloseMessage = error.localizedDescription
         }
 
@@ -305,7 +312,12 @@ final class MonitorStore: ObservableObject {
 
     func search(_ query: String) async throws -> [Instrument] {
         try await withAdmittedThrowingOperation(.search) {
-            try await client.searchInstruments(matching: query)
+            do {
+                return try await client.searchInstruments(matching: query)
+            } catch {
+                diagnostics.record(error, operation: "search")
+                throw error
+            }
         }
     }
 
@@ -334,6 +346,7 @@ final class MonitorStore: ObservableObject {
                     scheduleRefreshAfterWatchlistMutation()
                     return true
                 } catch {
+                    diagnostics.record(error, operation: "storage.remove")
                     recordStorageError(
                         context: .watchlist,
                         message: String(
@@ -361,6 +374,7 @@ final class MonitorStore: ObservableObject {
                     clearStorageError(context: .watchlist)
                     return true
                 } catch {
+                    diagnostics.record(error, operation: "storage.moveInstruments")
                     recordStorageError(
                         context: .watchlist,
                         message: String(
@@ -417,6 +431,7 @@ final class MonitorStore: ObservableObject {
                         )
                     )
                 } catch {
+                    diagnostics.record(error, operation: "storage.importWatchlistAdmitted")
                     return .failure(
                         String(
                             format: tr("JSON 第 %d 个标的无效：%@"),
@@ -462,6 +477,7 @@ final class MonitorStore: ObservableObject {
                     scheduleRefreshAfterWatchlistMutation()
                     return .success(count: imported.instruments.count)
                 } catch {
+                    diagnostics.record(error, operation: "storage.importWatchlistAdmitted")
                     let message = String(
                         format: tr("保存观察列表失败：%@"),
                         error.localizedDescription
@@ -472,6 +488,7 @@ final class MonitorStore: ObservableObject {
                 }
             }
         } catch {
+            diagnostics.record(error, operation: "storage.importWatchlistAdmitted")
             return .failure(
                 String(format: tr("JSON 解析失败：%@"), error.localizedDescription)
             )
@@ -503,6 +520,7 @@ final class MonitorStore: ObservableObject {
                     scheduleRefreshAfterWatchlistMutation()
                     return nil
                 } catch {
+                    diagnostics.record(error, operation: "storage.add")
                     let message = String(
                         format: tr("保存观察列表失败：%@"),
                         error.localizedDescription
@@ -720,6 +738,7 @@ final class MonitorStore: ObservableObject {
                 clearStorageError(context: .quoteCount)
                 return true
             } catch {
+                diagnostics.record(error, operation: "storage.clearQuoteHistory")
                 recordStorageError(
                     context: .quoteClear,
                     message: String(
@@ -823,13 +842,16 @@ final class MonitorStore: ObservableObject {
                 acceptedQuotes.append((outcome.instrument, quote))
                 storageFailure = storageFailure ?? error
                 didPersistQuote = true
-            case .cached(let quote, let message, let error):
-                staleResponses += 1
+            case .previousSession(let quote, let error):
+                let sessionDate = TradingCalendar.sessionDate(
+                    for: quote.marketTime,
+                    market: outcome.instrument.market
+                )
                 monitored = MonitoredInstrument(
                     instrument: outcome.instrument,
                     quote: quote,
-                    status: .stale,
-                    statusMessage: message
+                    status: .previousSession,
+                    statusMessage: String(format: tr("最近行情 · %@"), sessionDate)
                 )
                 storageFailure = storageFailure ?? error
                 didPersistQuote = true
@@ -1142,6 +1164,7 @@ final class MonitorStore: ObservableObject {
             #endif
             return nil
         } catch {
+            diagnostics.record(error, operation: "storage.persistAlertSettings")
             guard revision == alertSettingsRevision else { return nil }
             let observedIDs = Set(instruments.map(\.id))
             alertPresentation.publishSettings(
@@ -1304,6 +1327,7 @@ final class MonitorStore: ObservableObject {
             clearStorageError(context: .quoteCount)
             return true
         } catch {
+            diagnostics.record(error, operation: "storage.reloadQuoteBarCount")
             recordStorageError(
                 context: .quoteCount,
                 message: String(

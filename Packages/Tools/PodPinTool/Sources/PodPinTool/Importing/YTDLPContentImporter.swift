@@ -168,8 +168,9 @@ actor YTDLPContentImporter: ContentImporting {
     private func check(_ result: ExternalToolResult, source: SupportedSource) throws {
         guard result.terminationStatus == 0 else {
             if Task.isCancelled { throw ContentImportError.cancelled }
-            throw ContentImportError.platformUnavailable(
-                "\(source.displayName) 暂时无法解析这条公开内容，请稍后重试。"
+            throw ContentImportFailure.toolFailure(
+                result, tool: "yt-dlp",
+                presentation: .platformUnavailable("\(source.displayName) 暂时无法解析这条公开内容，请稍后重试。")
             )
         }
     }
@@ -332,7 +333,9 @@ actor YTDLPContentImporter: ContentImporting {
             workingDirectoryURL: nil
         )
         guard result.terminationStatus == 0 else {
-            throw ContentImportError.invalidDownloadedAudio
+            throw ContentImportFailure.toolFailure(
+                result, tool: "ffprobe", presentation: .invalidDownloadedAudio
+            )
         }
         guard let data = result.standardOutput.data(using: .utf8),
             let probe = try? JSONDecoder().decode(FFProbePayload.self, from: data),

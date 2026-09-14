@@ -2,6 +2,7 @@
 import Combine
 import Foundation
 import OSLog
+import OneBoxRuntime
 
 /// The player lifecycle exposed to presentation layers. `replayPending` is an
 /// intentional, short-lived boundary: it prevents a completed item's replay
@@ -63,6 +64,7 @@ final class AudioPlaybackController: NSObject, ObservableObject {
     /// store owns the policy for advancing persistent playback queues.
     var onPlaybackFinished: ((UUID) -> Void)?
 
+    private let diagnostics: ToolDiagnostics
     private let playerFactory: (AVPlayerItem) -> AVPlayer
     private var player: AVPlayer?
     private var timeObserver: Any?
@@ -87,7 +89,11 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         self.init(playerFactory: { AVPlayer(playerItem: $0) })
     }
 
-    init(playerFactory: @escaping (AVPlayerItem) -> AVPlayer) {
+    init(
+        playerFactory: @escaping (AVPlayerItem) -> AVPlayer,
+        diagnostics: ToolDiagnostics = .disabled
+    ) {
+        self.diagnostics = diagnostics
         self.playerFactory = playerFactory
         super.init()
     }
@@ -163,6 +169,20 @@ final class AudioPlaybackController: NSObject, ObservableObject {
                         self.notifyStateChanged()
                     }
                 case .failed:
+                    if case .failed = self.state { return }
+                    if let error = observedItem.error {
+                        self.diagnostics.record(error, operation: "playback.player")
+                    } else if let event = observedItem.errorLog()?.events.last {
+                        self.diagnostics.record(
+                            NSError(
+                                domain: event.errorDomain, code: event.errorStatusCode,
+                                userInfo: [
+                                    NSLocalizedDescriptionKey: event.errorComment
+                                        ?? "AVPlayerItem failed"
+                                ]),
+                            operation: "playback.player"
+                        )
+                    }
                     self.failPlayback(
                         itemID: itemID,
                         message: observedItem.error?.localizedDescription ?? "音频无法播放。",

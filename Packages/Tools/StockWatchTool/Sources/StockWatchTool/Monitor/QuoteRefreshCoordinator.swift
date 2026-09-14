@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import OneBoxRuntime
 
 struct QuoteRefreshBatch: Sendable {
     let outcomes: [QuoteRefreshOutcome]
@@ -11,7 +12,7 @@ struct QuoteRefreshOutcome: Sendable {
 
     enum Result: Sendable {
         case updated(QuoteSnapshot, storageError: String?)
-        case cached(QuoteSnapshot, message: String, storageError: String?)
+        case previousSession(QuoteSnapshot, storageError: String?)
         case noData(String)
         case stale(String)
         case failed(String)
@@ -26,6 +27,7 @@ actor QuoteRefreshCoordinator {
         category: "StockWatch"
     )
 
+    private let diagnostics: ToolDiagnostics
     private let client: any MarketDataClient
     private let database: MarketDatabase
     private let maximumConcurrentRequests: Int
@@ -36,9 +38,11 @@ actor QuoteRefreshCoordinator {
         client: any MarketDataClient,
         database: MarketDatabase,
         maximumConcurrentRequests: Int = 6,
-        now: @escaping @Sendable (Market) -> Date = { _ in Date() }
+        now: @escaping @Sendable (Market) -> Date = { _ in Date() },
+        diagnostics: ToolDiagnostics = .disabled
     ) {
         precondition(maximumConcurrentRequests > 0)
+        self.diagnostics = diagnostics
         self.client = client
         self.database = database
         self.maximumConcurrentRequests = maximumConcurrentRequests
@@ -60,6 +64,7 @@ actor QuoteRefreshCoordinator {
             return QuoteRefreshBatch(outcomes: [])
         }
 
+        let diagnostics = diagnostics
         let client = client
         let database = database
         let requestLimiter = requestLimiter
@@ -77,7 +82,8 @@ actor QuoteRefreshCoordinator {
                             currentQuote: currentQuote,
                             client: client,
                             database: database,
-                            now: now
+                            now: now,
+                            diagnostics: diagnostics
                         )
                     }
                     return (
@@ -107,7 +113,8 @@ actor QuoteRefreshCoordinator {
                                 currentQuote: currentQuote,
                                 client: client,
                                 database: database,
-                                now: now
+                                now: now,
+                                diagnostics: diagnostics
                             )
                         }
                         return (
@@ -133,7 +140,8 @@ actor QuoteRefreshCoordinator {
         currentQuote: QuoteSnapshot?,
         client: any MarketDataClient,
         database: MarketDatabase,
-        now: @Sendable (Market) -> Date
+        now: @Sendable (Market) -> Date,
+        diagnostics: ToolDiagnostics
     ) async -> QuoteRefreshOutcome {
         let interval = signposter.beginInterval(
             "FetchQuote",
@@ -153,6 +161,7 @@ actor QuoteRefreshCoordinator {
                     instrument: instrument
                 )
             } catch {
+                diagnostics.record(error, operation: "quote.validate")
                 return QuoteRefreshOutcome(
                     instrument: instrument,
                     result: .rejected(error.localizedDescription)
@@ -163,29 +172,34 @@ actor QuoteRefreshCoordinator {
                 market: instrument.market
             )
             guard quoteSession <= currentSession else {
+                diagnostics.record(
+                    message:
+                        "Future quote session: source=\(quote.source.rawValue), received=\(quoteSession), expected=\(currentSession)",
+                    operation: "quote.validate")
                 return QuoteRefreshOutcome(
                     instrument: instrument,
                     result: .rejected(tr("行情源返回了未来交易日数据"))
                 )
             }
             if let currentQuote, quote.marketTime < currentQuote.marketTime {
+                diagnostics.record(
+                    message:
+                        "Older quote: source=\(quote.source.rawValue), received=\(quote.marketTime), cached=\(currentQuote.marketTime)",
+                    operation: "quote.validate")
                 return QuoteRefreshOutcome(
                     instrument: instrument,
                     result: .stale(tr("行情源返回了较旧数据"))
                 )
             }
             let isCurrentSession = quoteSession == currentSession
-            let staleMessage = tr("行情源返回了非当前交易日数据")
 
             func persistedResult(storageError: String?) -> QuoteRefreshOutcome.Result {
                 if isCurrentSession {
                     return .updated(quote, storageError: storageError)
                 }
-                return .cached(
-                    quote,
-                    message: staleMessage,
-                    storageError: storageError
-                )
+                // Public feeds retain the last session on holidays and before opening.
+                // Keep its date visible without treating it as a live alert input.
+                return .previousSession(quote, storageError: storageError)
             }
 
             do {
@@ -198,6 +212,7 @@ actor QuoteRefreshCoordinator {
                 )
             } catch let error as MarketDatabaseError {
                 try Task.checkCancellation()
+                diagnostics.record(error, operation: "storage.save-quote")
                 switch error {
                 case .invalidQuote, .quoteInstrumentMismatch:
                     return QuoteRefreshOutcome(
@@ -212,6 +227,7 @@ actor QuoteRefreshCoordinator {
                 }
             } catch {
                 try Task.checkCancellation()
+                diagnostics.record(error, operation: "storage.save-quote")
                 return QuoteRefreshOutcome(
                     instrument: instrument,
                     result: persistedResult(storageError: error.localizedDescription)
@@ -220,11 +236,13 @@ actor QuoteRefreshCoordinator {
         } catch is CancellationError {
             return QuoteRefreshOutcome(instrument: instrument, result: .discarded)
         } catch MarketDataError.noIntradayData {
+            diagnostics.record(MarketDataError.noIntradayData, operation: "quote.fetch")
             return QuoteRefreshOutcome(
                 instrument: instrument,
                 result: .noData(MarketDataError.noIntradayData.localizedDescription)
             )
         } catch {
+            diagnostics.record(error, operation: "quote.fetch")
             return QuoteRefreshOutcome(
                 instrument: instrument,
                 result: .failed(error.localizedDescription)

@@ -207,8 +207,15 @@ final class YTDLPContentImporterTests: XCTestCase {
         do {
             _ = try await importer.probe(url: sourceURL)
             XCTFail("the failed extractor should remain a platform failure")
-        } catch ContentImportError.platformUnavailable {
-            // Expected: stderr text is not an authentication signal.
+        } catch let failure as ContentImportFailure {
+            guard case .platformUnavailable = failure.presentation else {
+                return XCTFail("stderr must not become an authentication signal")
+            }
+            XCTAssertEqual((failure.underlying as NSError).code, 1)
+            XCTAssertEqual(
+                failure.underlying.localizedDescription,
+                "Fresh cookies (not necessarily logged in) are needed"
+            )
         }
     }
 

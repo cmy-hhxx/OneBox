@@ -5,20 +5,30 @@ import SwiftUI
 public struct HostView: View {
     let catalog: ToolCatalog
     let onInitialContentReady: @MainActor @Sendable () -> Void
+    let debugLogStore: DebugLogStore?
+    @Binding private var isDiagnosticsPresented: Bool
+    private let copyDiagnosticsText: (String) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selection: ToolID?
     @State private var isSidebarVisible = true
+    @Environment(\.oneBoxAccessibilityReduceMotionOverride) private var reduceMotionOverride
     @State private var hasInitialContentReady = false
     @State private var performanceTrace: HostPerformanceTrace
 
     public init(
         catalog: ToolCatalog,
-        onInitialContentReady: @escaping @MainActor @Sendable () -> Void = {}
+        onInitialContentReady: @escaping @MainActor @Sendable () -> Void = {},
+        debugLogStore: DebugLogStore? = nil,
+        isDiagnosticsPresented: Binding<Bool> = .constant(false),
+        copyDiagnosticsText: @escaping (String) -> Void = { _ in }
     ) {
         self.catalog = catalog
         self.onInitialContentReady = onInitialContentReady
+        self.debugLogStore = debugLogStore
+        _isDiagnosticsPresented = isDiagnosticsPresented
+        self.copyDiagnosticsText = copyDiagnosticsText
         let initialSelection = catalog.registrations.first?.id
         _selection = State(initialValue: initialSelection)
         _performanceTrace = State(
@@ -28,49 +38,87 @@ public struct HostView: View {
 
     public var body: some View {
         let palette = DesignPalette.resolve(colorScheme)
+        VSplitView {
+            workspace
+                .frame(minHeight: 280)
+            if isDiagnosticsPresented, let debugLogStore {
+                DebugLogView(
+                    store: debugLogStore, catalog: catalog,
+                    copyText: copyDiagnosticsText,
+                    onClose: { isDiagnosticsPresented = false }
+                )
+                .frame(minHeight: 220, idealHeight: 280, maxHeight: 480)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.designPalette, palette)
+        .font(DesignTypography.body)
+        .tint(palette.accent)
+        .background(palette.background)
+    }
 
-        HStack(spacing: 0) {
-            if isSidebarVisible {
+    private var workspace: some View {
+        GeometryReader { geometry in
+            let availableWidth = geometry.size.width
+            let expandedSidebarWidth = min(
+                DesignMetrics.sidebarWidth,
+                max(
+                    212,
+                    availableWidth - DesignMetrics.defaultWindowSize.width
+                        + DesignMetrics.sidebarWidth)
+            )
+
+            let sidebarWidth = isSidebarVisible ? expandedSidebarWidth : 60
+
+            HStack(spacing: 0) {
                 HostSidebar(
                     catalog: catalog,
                     selection: selection,
                     onSelect: activateTool,
-                    onCollapse: toggleSidebar
+                    onCollapse: toggleSidebar,
+                    debugLogStore: debugLogStore,
+                    onOpenDiagnostics: toggleDiagnostics,
+                    isDiagnosticsPresented: isDiagnosticsPresented,
+                    isCollapsed: !isSidebarVisible,
+                    expandedWidth: expandedSidebarWidth
                 )
-                .frame(width: DesignMetrics.sidebarWidth)
-                .ignoresSafeArea(.container, edges: .top)
-                .transition(.move(edge: .leading))
-            }
+                .frame(width: sidebarWidth)
+                .padding(12)
 
-            ToolDetailView(
-                registration: catalog.registration(for: selection),
-                onContentPresented: performanceTrace.contentDidAppear,
-                onContentReady: contentDidBecomeReady
-            )
-        }
-        .overlay(alignment: .topLeading) {
-            if !isSidebarVisible {
-                SidebarToggleButton(
-                    accessibilityTitle: "展开侧栏",
-                    action: toggleSidebar
+                ToolDetailView(
+                    registration: catalog.registration(for: selection),
+                    onContentPresented: performanceTrace.contentDidAppear,
+                    onContentReady: contentDidBecomeReady
                 )
-                .padding(.leading, DesignMetrics.collapsedToggleLeadingInset)
-                .frame(
-                    maxWidth: .infinity,
-                    maxHeight: .infinity,
-                    alignment: .topLeading
+                // A definite width keeps HStack from measuring the whole tool tree at
+                // zero and infinity again on every sidebar animation update.
+                .frame(width: max(0, availableWidth - sidebarWidth - 24))
+                .frame(maxHeight: .infinity)
+                .environment(
+                    \.openToolDiagnostics,
+                    OpenToolDiagnosticsAction(action: showDiagnostics)
                 )
-                .ignoresSafeArea(.container, edges: .top)
-                .transition(.opacity)
             }
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         }
-        .environment(\.designPalette, palette)
-        .tint(palette.accent)
-        .background(palette.background)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(
             hasInitialContentReady ? "onebox.main.ready" : "onebox.main.loading"
         )
+    }
+
+    private func showDiagnostics() {
+        guard let debugLogStore else { return }
+        debugLogStore.selectedModuleID = selection
+        isDiagnosticsPresented = true
+    }
+
+    private func toggleDiagnostics() {
+        if isDiagnosticsPresented {
+            isDiagnosticsPresented = false
+        } else {
+            showDiagnostics()
+        }
     }
 
     private func activateTool(_ toolID: ToolID) {
@@ -80,13 +128,10 @@ public struct HostView: View {
     }
 
     private func toggleSidebar() {
-        if reduceMotion {
-            isSidebarVisible.toggle()
-        } else {
-            withAnimation(.smooth(duration: 0.2)) {
-                isSidebarVisible.toggle()
-            }
-        }
+        let reducesMotion = reduceMotionOverride ?? reduceMotion
+        var transaction = Transaction(animation: reducesMotion ? nil : DesignMotion.sidebar)
+        transaction.disablesAnimations = reducesMotion
+        withTransaction(transaction) { isSidebarVisible.toggle() }
     }
 
     private func contentDidBecomeReady(for toolID: ToolID) {

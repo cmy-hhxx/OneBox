@@ -3,34 +3,59 @@ import XCTest
 @testable import StockWatchTool
 
 final class IntradayChartPreparationTests: XCTestCase {
-    func testSegmentColorsReflectEachLocalPriceMove() {
-        XCTAssertEqual(
-            IntradaySegmentColoring.roles(
-                closes: [10, 11, 9, 9, 10],
-                market: .aShare
-            ),
-            [.red, .green, .neutral, .red]
-        )
+    func testLowPriceETFMovementUsesMostOfThePriceDomain() {
+        let chart = preparation(closes: [0.536, 0.534, 0.538], previousClose: 0.536)
+
+        let visibleMovement = (0.538 - 0.534) / (chart.high - chart.low)
+
+        XCTAssertGreaterThan(visibleMovement, 0.7)
+        XCTAssertLessThan(chart.low, 0.534)
+        XCTAssertGreaterThan(chart.high, 0.538)
     }
 
-    func testUnitedStatesSegmentColorsUseLocalMarketConvention() {
-        XCTAssertEqual(
-            IntradaySegmentColoring.roles(
-                closes: [10, 11, 9, 9, 10],
-                market: .unitedStates
-            ),
-            [.green, .red, .neutral, .green]
-        )
+    func testFlatPricesHaveFiniteNonzeroDomainsAtDifferentPriceScales() {
+        for price in [0.001, 0.538, 10, 100_000] {
+            let chart = preparation(closes: [price, price], previousClose: price)
+
+            XCTAssertTrue(chart.low.isFinite)
+            XCTAssertTrue(chart.high.isFinite)
+            XCTAssertLessThan(chart.low, price)
+            XCTAssertGreaterThan(chart.high, price)
+            XCTAssertLessThan((chart.high - chart.low) / price, 0.002)
+        }
     }
 
-    func testAllFlatSegmentsUseNeutralColorRole() {
-        XCTAssertEqual(
-            IntradaySegmentColoring.roles(
-                closes: [10, 10, 10],
-                market: .aShare
-            ),
-            [.neutral, .neutral]
+    func testDomainIncludesDayOpenAndPreviousCloseOutsideMinutePrices() {
+        let chart = IntradayChartPreparation(
+            points: [
+                bar(hour: 9, minute: 30, close: 0.534),
+                bar(hour: 10, minute: 0, close: 0.536),
+            ],
+            market: .aShare,
+            dayOpen: 0.540,
+            previousClose: 0.530,
+            showReviewMarkers: false
         )
+
+        XCTAssertLessThan(chart.low, 0.530)
+        XCTAssertGreaterThan(chart.high, 0.540)
+    }
+
+    func testPreparedPointsRetainExactTimesAcrossFoldedLunchBoundary() {
+        let bars = [
+            bar(hour: 11, minute: 30, close: 0.534),
+            bar(hour: 13, minute: 0, close: 0.536),
+        ]
+        let chart = IntradayChartPreparation(
+            points: bars,
+            market: .aShare,
+            dayOpen: 0.534,
+            previousClose: 0.536,
+            showReviewMarkers: false
+        )
+
+        XCTAssertEqual(chart.points.map(\.time), bars.map(\.time))
+        XCTAssertEqual(chart.points.map(\.progress), [0.5, 0.5])
     }
 
     func testFiltersLunchBreakAndSelectsProfitPairForADownCloseWithRebound() throws {

@@ -34,6 +34,12 @@ targets:
         buildPhase: resources
       - path: Licenses/GRDB-MIT.txt
         buildPhase: resources
+      - path: Licenses/Uiverse-MIT.txt
+        buildPhase: resources
+      - path: Licenses/BoardUI-MIT.txt
+        buildPhase: resources
+      - path: Licenses/Inter-OFL.txt
+        buildPhase: resources
       - path: Packages/Tools/PodPinTool/Tests/PodPinToolTests/Resources/Fixtures/podpin-sample.m4a
         buildPhase: resources
     dependencies:

@@ -15,6 +15,8 @@ enum InstrumentRowPresentation {
             return tr("正在刷新")
         case .live:
             return nil
+        case .previousSession:
+            return statusMessage ?? tr("最近交易日行情")
         case .stale:
             return statusMessage ?? tr("行情已过期")
         }
@@ -76,6 +78,8 @@ enum StockWatchRowLayout: Equatable {
     case compact
 
     static let wideMinimumWidth: CGFloat = 420
+    static let identityColumnWidth: CGFloat = 164
+    static let priceColumnWidth: CGFloat = 104
 
     var visibleFields: Set<StockWatchRowField> {
         switch self {
@@ -93,20 +97,35 @@ struct InstrumentRowView: View {
     let chart: PreparedIntradayChart?
     let status: MonitorStatus
     let statusMessage: String?
+    var isSelected = false
 
     @Environment(\.designPalette) private var palette
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            wideContent
-                .frame(minWidth: StockWatchRowLayout.wideMinimumWidth)
+        VStack(alignment: .leading, spacing: DesignMetrics.space8) {
+            ViewThatFits(in: .horizontal) {
+                wideContent
+                    .frame(minWidth: StockWatchRowLayout.wideMinimumWidth)
 
-            compactContent
+                compactContent
+            }
+
+            if let statusText {
+                Label(statusText, systemImage: statusIcon)
+                    .font(DesignTypography.metadata)
+                    .foregroundStyle(statusColor)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help(statusText)
+                    .accessibilityHidden(true)
+            }
         }
-        .padding(.horizontal, DesignMetrics.space12)
+        // The native macOS List cell adds 8pt; the total matches BoardUI's 12pt cell inset.
+        .padding(.horizontal, DesignMetrics.space4)
+        .padding(.vertical, 10)
         .frame(
             maxWidth: .infinity,
-            minHeight: DesignMetrics.dataRowHeight + DesignMetrics.space16,
+            minHeight: 64,
             alignment: .leading
         )
         .contentShape(.rect)
@@ -116,13 +135,13 @@ struct InstrumentRowView: View {
     private var wideContent: some View {
         HStack(spacing: DesignMetrics.space12) {
             identity
-                .frame(width: 132, alignment: .leading)
+                .frame(width: StockWatchRowLayout.identityColumnWidth, alignment: .leading)
 
             intradayChart
                 .frame(minWidth: 0, maxWidth: .infinity)
 
             price
-                .frame(width: 108, alignment: .trailing)
+                .frame(width: StockWatchRowLayout.priceColumnWidth, alignment: .trailing)
                 .accessibilityHidden(true)
         }
     }
@@ -132,7 +151,7 @@ struct InstrumentRowView: View {
             identity
 
             price
-                .frame(width: 96, alignment: .trailing)
+                .frame(width: StockWatchRowLayout.priceColumnWidth, alignment: .trailing)
                 .accessibilityHidden(true)
         }
     }
@@ -142,21 +161,15 @@ struct InstrumentRowView: View {
             Text(instrument.name)
                 .font(DesignTypography.bodyMedium)
                 .foregroundStyle(palette.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .help(instrument.name)
 
             Text("\(instrument.symbol) · \(instrument.namespace.displayName)")
                 .font(DesignTypography.metadata)
                 .monospacedDigit()
-                .foregroundStyle(palette.textSecondary)
+                .foregroundStyle(metadataColor)
                 .lineLimit(1)
-
-            if let statusText {
-                Label(statusText, systemImage: statusIcon)
-                    .font(DesignTypography.metadata)
-                    .foregroundStyle(statusColor)
-                    .lineLimit(1)
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
@@ -165,9 +178,9 @@ struct InstrumentRowView: View {
 
     @ViewBuilder
     private var intradayChart: some View {
-        if let chart, chart.points.count > 1 {
+        if let chart, !chart.points.isEmpty {
             IntradayChartView(chart: chart)
-                .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 48)
+                .frame(maxWidth: .infinity, minHeight: 48, maxHeight: 52)
         } else {
             HStack(spacing: DesignMetrics.space8) {
                 if status == .loading {
@@ -177,12 +190,10 @@ struct InstrumentRowView: View {
                 }
                 Text(status == .loading ? "正在准备分时" : "等待分时数据")
                     .font(DesignTypography.metadata)
-                    .foregroundStyle(palette.textSecondary)
+                    .foregroundStyle(metadataColor)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, minHeight: 44)
-            .background(palette.surfaceElevated)
-            .clipShape(.rect(cornerRadius: DesignMetrics.space4))
             .accessibilityHidden(true)
         }
     }
@@ -192,7 +203,7 @@ struct InstrumentRowView: View {
         if let quote {
             VStack(alignment: .trailing, spacing: DesignMetrics.space4) {
                 Text(InstrumentRowPresentation.priceText(quote.lastPrice))
-                    .font(DesignTypography.sectionTitle)
+                    .font(DesignTypography.bodyMedium)
                     .monospacedDigit()
                     .foregroundStyle(priceColor(for: quote))
 
@@ -200,7 +211,7 @@ struct InstrumentRowView: View {
                     InstrumentRowPresentation.percentText(quote.changePercent),
                     systemImage: directionIcon(for: quote.changePercent)
                 )
-                .font(DesignTypography.metadata)
+                .font(DesignTypography.bodyMedium)
                 .monospacedDigit()
                 .foregroundStyle(priceColor(for: quote))
                 .lineLimit(1)
@@ -208,7 +219,7 @@ struct InstrumentRowView: View {
         } else {
             Text(status == .loading ? "拉取中" : "暂无报价")
                 .font(DesignTypography.metadata)
-                .foregroundStyle(palette.textSecondary)
+                .foregroundStyle(metadataColor)
         }
     }
 
@@ -229,7 +240,7 @@ struct InstrumentRowView: View {
             return "clock.badge.exclamationmark"
         case .loading:
             return "arrow.clockwise"
-        case .idle, .live:
+        case .idle, .live, .previousSession:
             return "clock"
         }
     }
@@ -238,7 +249,11 @@ struct InstrumentRowView: View {
         if status == .stale || (status == .idle && statusMessage != nil) {
             return palette.warning
         }
-        return palette.textSecondary
+        return metadataColor
+    }
+
+    private var metadataColor: Color {
+        isSelected ? palette.textPrimary : palette.textSecondary
     }
 
     private func changeRole(for quote: QuoteSnapshot) -> MarketColorRole {

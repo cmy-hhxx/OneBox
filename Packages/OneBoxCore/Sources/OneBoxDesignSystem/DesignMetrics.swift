@@ -16,7 +16,7 @@ public enum DesignMetrics {
     public static let space48: CGFloat = 48
 
     public static let mainInset: CGFloat = 24
-    public static let sidebarWidth: CGFloat = 224
+    public static let sidebarWidth: CGFloat = 260
     public static let sidebarEdgeInset: CGFloat = 12
     public static let sidebarTextInset: CGFloat = 8
     public static let sidebarRowHeight: CGFloat = 36
@@ -24,6 +24,9 @@ public enum DesignMetrics {
     public static let titlebarControlSize: CGFloat = 32
     public static let collapsedToggleLeadingInset: CGFloat = 80
     public static let dataRowHeight: CGFloat = 56
+    public static let inspectorGutter: CGFloat = 12
+    public static let inspectorHeaderHeight: CGFloat = 36
     public static let inspectorWidth: CGFloat = 248
-    public static let cornerRadius: CGFloat = 8
+    public static let cardCornerRadius: CGFloat = 24
+    public static let cornerRadius: CGFloat = 24
 }

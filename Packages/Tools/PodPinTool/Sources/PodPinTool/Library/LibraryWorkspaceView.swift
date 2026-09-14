@@ -188,7 +188,7 @@ struct LibraryWorkspaceView<
     var body: some View {
         VStack(spacing: 0) {
             workspaceToolbar
-                .padding(.bottom, DesignMetrics.space8)
+                .padding(.bottom, DesignMetrics.space16)
 
             if let notice {
                 PodPinInlineNotice(
@@ -201,10 +201,17 @@ struct LibraryWorkspaceView<
 
             routePane
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(palette.surface)
+                .clipShape(.rect(cornerRadius: DesignMetrics.cornerRadius))
+                .overlay {
+                    RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius)
+                        .strokeBorder(palette.border, lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
 
             if currentRoute != .nowPlaying {
-                Divider()
                 compactPlayerContent
+                    .padding(.top, DesignMetrics.space12)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -239,13 +246,15 @@ struct LibraryWorkspaceView<
 
             Spacer(minLength: 0)
 
-            toolbarDestinationButton(
-                "导入",
-                systemImage: "link.badge.plus",
-                isActive: isImportDestination,
-                accessibilityIdentifier: "workspace.import"
-            ) {
-                openImportForSelectedFolder()
+            if !isImportDestination {
+                toolbarDestinationButton(
+                    "导入",
+                    systemImage: "link.badge.plus",
+                    isActive: false,
+                    accessibilityIdentifier: "workspace.import"
+                ) {
+                    openImportForSelectedFolder()
+                }
             }
 
             toolbarDestinationButton(
@@ -276,13 +285,15 @@ struct LibraryWorkspaceView<
 
             Spacer(minLength: 0)
 
-            toolbarDestinationButton(
-                "导入",
-                systemImage: "link.badge.plus",
-                isActive: isImportDestination,
-                accessibilityIdentifier: "workspace.import"
-            ) {
-                openImportForSelectedFolder()
+            if !isImportDestination {
+                toolbarDestinationButton(
+                    "导入",
+                    systemImage: "link.badge.plus",
+                    isActive: false,
+                    accessibilityIdentifier: "workspace.import"
+                ) {
+                    openImportForSelectedFolder()
+                }
             }
 
             compactToolbarDestinationButton(
@@ -308,6 +319,9 @@ struct LibraryWorkspaceView<
             isCollectionPickerPresented = true
         } label: {
             HStack(spacing: DesignMetrics.space8) {
+                Image(systemName: selectedFolder?.isSystemFolder == true ? "tray" : "folder")
+                    .foregroundStyle(palette.accent)
+                    .accessibilityHidden(true)
                 Text(currentCollectionTitle)
                     .font(DesignTypography.sectionTitle)
                     .lineLimit(1)
@@ -326,7 +340,7 @@ struct LibraryWorkspaceView<
             .fixedSize(horizontal: true, vertical: false)
             .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ToolActionButtonStyle(kind: .quiet))
         .accessibilityFocused($isCollectionPickerButtonFocused)
         .popover(isPresented: $isCollectionPickerPresented, arrowEdge: .bottom) {
             LibraryCollectionPickerPanel(
@@ -383,7 +397,8 @@ struct LibraryWorkspaceView<
                 )
                 .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(ToolIconButtonStyle())
         .menuIndicator(.hidden)
         .accessibilityLabel("管理文件夹")
         .accessibilityValue(selectedFolder?.name ?? "资料库")
@@ -397,7 +412,7 @@ struct LibraryWorkspaceView<
     private var importBackButton: some View {
         Button("返回资料库", systemImage: "chevron.left", action: onShowLibrary)
             .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
+            .buttonStyle(ToolIconButtonStyle())
             .frame(
                 width: DesignMetrics.titlebarControlSize,
                 height: DesignMetrics.titlebarControlSize
@@ -415,15 +430,11 @@ struct LibraryWorkspaceView<
         action: @escaping () -> Void
     ) -> some View {
         Button(title, systemImage: systemImage, action: action)
-            .buttonStyle(.borderless)
-            .font(DesignTypography.bodyMedium)
-            .foregroundStyle(palette.textPrimary)
-            .padding(.horizontal, DesignMetrics.space4)
-            .frame(minHeight: DesignMetrics.titlebarControlSize)
-            .background(
-                isActive ? palette.selection : palette.background,
-                in: .rect(cornerRadius: DesignMetrics.cornerRadius)
+            .buttonStyle(
+                ToolActionButtonStyle(
+                    kind: accessibilityIdentifier == "workspace.import" ? .primary : .secondary)
             )
+            .disabled(isActive)
             .accessibilityValue(isActive ? "已打开" : "未打开")
             .accessibilityIdentifier(accessibilityIdentifier)
             .help(title)
@@ -445,12 +456,7 @@ struct LibraryWorkspaceView<
                 )
                 .contentShape(.rect)
         }
-        .buttonStyle(.borderless)
-        .foregroundStyle(palette.textPrimary)
-        .background(
-            isActive ? palette.selection : palette.background,
-            in: .rect(cornerRadius: DesignMetrics.cornerRadius)
-        )
+        .buttonStyle(ToolIconButtonStyle(isSelected: isActive))
         .accessibilityLabel(title)
         .accessibilityValue(isActive ? "已打开" : "未打开")
         .accessibilityIdentifier(accessibilityIdentifier)
@@ -535,65 +541,100 @@ struct LibraryWorkspaceView<
                 openImportForSelectedFolder()
             }
         case .loaded:
-            List(selection: $selectedItemID) {
-                ForEach(items) { item in
-                    LibraryItemRowView(
-                        item: item,
-                        isSelected: selectedItemID == item.id,
-                        isCurrentItem: currentItemID == item.id,
-                        isPlaying: currentItemID == item.id && isPlaying,
-                        downloadSession: downloadSession,
-                        playbackTimeline: playbackTimeline,
-                        onTogglePlayback: { onItemAction(item, .togglePlayback) },
-                        onItemAction: { action in
-                            onItemAction(item, action)
-                        }
-                    )
-                    .tag(item.id)
-                    .draggable(item.id.uuidString)
-                    .contextMenu {
-                        itemContextMenu(for: item)
-                    }
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(
-                        selectedItemID == item.id ? palette.selection : palette.background
-                    )
-                    .listRowSeparatorTint(palette.border)
-                    .accessibilityIdentifier("library.item.\(item.id.uuidString)")
-                }
+            VStack(spacing: 0) {
+                libraryTableHeader
+                libraryItemsList
+            }
+        }
+    }
 
-                if canLoadMoreItems {
-                    HStack(spacing: DesignMetrics.space8) {
-                        Spacer(minLength: 0)
-                        ProgressView()
-                            .controlSize(.small)
-                            .accessibilityHidden(true)
-                        Text("正在载入更多音频…")
-                            .font(DesignTypography.metadata)
-                            .foregroundStyle(palette.textSecondary)
-                        Spacer(minLength: 0)
+    private var libraryTableHeader: some View {
+        HStack(spacing: DesignMetrics.space12) {
+            Text("音频")
+            Spacer(minLength: 0)
+            Text("下载").frame(width: DesignMetrics.titlebarControlSize)
+            Text("操作").frame(width: DesignMetrics.titlebarControlSize)
+        }
+        .font(DesignTypography.bodyMedium)
+        .foregroundStyle(palette.textSecondary)
+        .padding(.horizontal, DesignMetrics.space12 + DesignMetrics.space8)
+        .frame(minHeight: 40)
+        .background(palette.sidebar)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(palette.border).frame(height: 1)
+        }
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    private var libraryItemsList: some View {
+        List(selection: $selectedItemID) {
+            ForEach(items) { item in
+                LibraryItemRowView(
+                    item: item,
+                    isSelected: selectedItemID == item.id,
+                    isCurrentItem: currentItemID == item.id,
+                    isPlaying: currentItemID == item.id && isPlaying,
+                    downloadSession: downloadSession,
+                    playbackTimeline: playbackTimeline,
+                    onTogglePlayback: { onItemAction(item, .togglePlayback) },
+                    onItemAction: { action in
+                        onItemAction(item, action)
                     }
-                    .padding(.vertical, DesignMetrics.space12)
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(palette.background)
-                    .onAppear(perform: onLoadMoreItems)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("library.load-more")
+                )
+                .tag(item.id)
+                .draggable(item.id.uuidString)
+                .contextMenu {
+                    itemContextMenu(for: item)
                 }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(
+                    selectedItemID == item.id ? palette.selection : palette.surface
+                )
+                .listRowSeparator(.hidden)
+                .overlay(alignment: .bottom) {
+                    if item.id != items.last?.id {
+                        Rectangle()
+                            .fill(palette.border)
+                            .frame(height: 1)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .accessibilityIdentifier("library.item.\(item.id.uuidString)")
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(palette.background)
-            .onKeyPress(.space) {
-                guard let selectedItem = selectedItem() else { return .ignored }
-                onItemAction(selectedItem, .togglePlayback)
-                return .handled
+
+            if canLoadMoreItems {
+                HStack(spacing: DesignMetrics.space8) {
+                    Spacer(minLength: 0)
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityHidden(true)
+                    Text("正在载入更多音频…")
+                        .font(DesignTypography.metadata)
+                        .foregroundStyle(palette.textSecondary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, DesignMetrics.space12)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(palette.surface)
+                .listRowSeparator(.hidden)
+                .onAppear(perform: onLoadMoreItems)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("library.load-more")
             }
-            .onKeyPress(.delete) {
-                guard let selectedItem = selectedItem() else { return .ignored }
-                onItemAction(selectedItem, .delete)
-                return .handled
-            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.horizontal, 0, for: .scrollContent)
+        .background(palette.surface)
+        .onKeyPress(.space) {
+            guard let selectedItem = selectedItem() else { return .ignored }
+            onItemAction(selectedItem, .togglePlayback)
+            return .handled
+        }
+        .onKeyPress(.delete) {
+            guard let selectedItem = selectedItem() else { return .ignored }
+            onItemAction(selectedItem, .delete)
+            return .handled
         }
     }
 
@@ -706,7 +747,7 @@ private struct LibraryStatusView: View {
 
             if let retryTitle, let onRetry {
                 Button(retryTitle, action: onRetry)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(ToolActionButtonStyle(kind: .secondary))
                     .font(DesignTypography.bodyMedium)
                     .padding(.top, DesignMetrics.space16)
             }
@@ -738,13 +779,15 @@ private struct LibraryEmptyStateView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Image(systemName: "waveform")
-                .font(DesignTypography.metric)
-                .foregroundStyle(palette.textSecondary)
+            Image(systemName: "headphones")
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(palette.accent)
+                .frame(width: 64, height: 64)
+                .background(palette.selection, in: .rect(cornerRadius: DesignMetrics.space16))
                 .accessibilityHidden(true)
 
             Text(copy.title)
-                .font(DesignTypography.sectionTitle)
+                .font(DesignTypography.metric)
                 .foregroundStyle(palette.textPrimary)
                 .padding(.top, DesignMetrics.space16)
                 .accessibilityIdentifier("library.empty.title")
@@ -758,7 +801,7 @@ private struct LibraryEmptyStateView: View {
                 .padding(.top, DesignMetrics.space8)
 
             Button(copy.action, systemImage: "link.badge.plus", action: onImport)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(ToolActionButtonStyle(kind: .primary))
                 .font(DesignTypography.bodyMedium)
                 .tint(palette.accent)
                 .controlSize(.regular)

@@ -14,6 +14,7 @@ struct LibraryItemRowView: View {
     let onItemAction: (LibraryItemAction) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.oneBoxAccessibilityReduceMotionOverride) private var reduceMotionOverride
     @Environment(\.designPalette) private var palette
     @State private var isHovering = false
 
@@ -28,13 +29,19 @@ struct LibraryItemRowView: View {
             storageControl
             moreControl
         }
-        .padding(.horizontal, DesignMetrics.space8)
+        .padding(.horizontal, DesignMetrics.space12)
         .padding(.vertical, DesignMetrics.space12)
         .frame(minHeight: DesignMetrics.dataRowHeight)
-        .background(isSelected ? palette.selection : palette.background)
+        .background(
+            isSelected
+                ? palette.selection : (isHovering ? palette.surfaceElevated : palette.surface)
+        )
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture(count: 2).onEnded { onItemAction(.playNow) })
         .onHover { isHovering = $0 }
+        .animation(
+            (reduceMotionOverride ?? reduceMotion) ? nil : DesignMotion.hover, value: isHovering
+        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAction(named: isPlaying ? "暂停" : "播放") { onTogglePlayback() }
@@ -66,13 +73,13 @@ struct LibraryItemRowView: View {
             .accessibilityLabel(isPlaying ? "暂停" : "播放")
             .help(isPlaying ? "暂停" : "播放")
             .animation(
-                reduceMotion ? nil : .easeOut(duration: 0.12),
+                (reduceMotionOverride ?? reduceMotion) ? nil : DesignMotion.hover,
                 value: showsArtworkControl
             )
         }
-        .frame(width: DesignMetrics.space48, height: DesignMetrics.space48)
+        .frame(width: 40, height: 40)
         .background(palette.surfaceElevated)
-        .clipShape(.rect(cornerRadius: DesignMetrics.cornerRadius))
+        .clipShape(.rect(cornerRadius: DesignMetrics.space12))
     }
 
     private var metadataInformation: some View {
@@ -85,9 +92,10 @@ struct LibraryItemRowView: View {
 
             Text(subtitle)
                 .font(DesignTypography.metadata)
-                .foregroundStyle(storageColor)
+                .foregroundStyle(palette.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .help(subtitle)
 
             if item.storageState == .downloading {
                 DownloadProgressView(session: downloadSession, itemID: item.id)
@@ -132,11 +140,12 @@ struct LibraryItemRowView: View {
                 )
                 .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(ToolIconButtonStyle())
         .menuIndicator(.hidden)
         .frame(width: DesignMetrics.titlebarControlSize, alignment: .trailing)
-        .help("更多操作")
-        .accessibilityLabel("更多操作")
+        .help("\(item.title) 的更多操作")
+        .accessibilityLabel("\(item.title) 的更多操作")
         .accessibilityIdentifier("library.item-actions.\(item.id.uuidString)")
     }
 
@@ -187,7 +196,7 @@ struct LibraryItemRowView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(title, systemImage: systemImage, action: action)
-            .buttonStyle(.borderless)
+            .buttonStyle(ToolIconButtonStyle())
             .labelStyle(.iconOnly)
             .font(DesignTypography.body)
             .foregroundStyle(color)

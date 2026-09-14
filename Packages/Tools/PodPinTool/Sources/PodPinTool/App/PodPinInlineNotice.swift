@@ -55,23 +55,18 @@ struct PodPinInlineNotice: View {
                     onCopyDetails(copyDetails)
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
+                .buttonStyle(ToolIconButtonStyle())
                 .help("复制错误详情")
             }
 
             Button("关闭提示", systemImage: "xmark", action: onDismiss)
                 .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
+                .buttonStyle(ToolCloseButtonStyle())
                 .help("关闭提示")
         }
         .padding(.horizontal, DesignMetrics.space12)
         .padding(.vertical, DesignMetrics.space8)
-        .background(palette.surface)
-        .overlay {
-            Rectangle()
-                .strokeBorder(palette.border, lineWidth: 1)
-                .accessibilityHidden(true)
-        }
+        .background(palette.negativeSurface, in: .rect(cornerRadius: DesignMetrics.cornerRadius))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("podpin.notice")
     }

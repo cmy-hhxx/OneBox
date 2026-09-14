@@ -1,9 +1,52 @@
+import OneBoxRuntime
 import XCTest
 import os
 
 @testable import StockWatchTool
 
 final class PublicMarketDataClientTests: XCTestCase {
+    func testSuccessfulFallbackReportsOriginalTencentFailure() async throws {
+        let events = OSAllocatedUnfairLock<[DiagnosticEvent]>(initialState: [])
+        StubURLProtocol.handler = { request in
+            if request.url?.host == "web.ifzq.gtimg.cn" {
+                throw NSError(
+                    domain: "TencentFixture", code: 503,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "upstream connection reset"
+                    ])
+            }
+            return Self.response(
+                for: request, json: Self.eastMoneyQuoteJSON(previousClose: "1490.00"))
+        }
+        let client = PublicMarketDataClient(
+            session: makeSession(),
+            diagnostics: ToolDiagnostics { event in events.withLock { $0.append(event) } }
+        )
+
+        let quote = try await client.fetchQuote(for: Instrument.initialWatchlist[0])
+
+        XCTAssertEqual(quote.source, .eastMoney)
+        let recorded = events.withLock { $0 }
+        XCTAssertEqual(recorded.count, 1)
+        XCTAssertEqual(recorded.first?.operation, "quote.tencent")
+        XCTAssertTrue(recorded.first?.message.contains("TencentFixture (503)") == true)
+        XCTAssertTrue(recorded.first?.message.contains("upstream connection reset") == true)
+    }
+
+    func testCancelledProviderRequestDoesNotProduceDiagnostic() async throws {
+        let events = OSAllocatedUnfairLock<[DiagnosticEvent]>(initialState: [])
+        StubURLProtocol.handler = { _ in throw URLError(.cancelled) }
+        let client = PublicMarketDataClient(
+            session: makeSession(),
+            diagnostics: ToolDiagnostics { event in events.withLock { $0.append(event) } }
+        )
+        do {
+            _ = try await client.fetchQuote(for: Instrument.initialWatchlist[0])
+            XCTFail("Expected cancellation")
+        } catch {}
+        XCTAssertTrue(events.withLock { $0.isEmpty })
+    }
+
     override func tearDown() {
         StubURLProtocol.handler = nil
         StubURLProtocol.redirectHandler = nil

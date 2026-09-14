@@ -106,7 +106,7 @@ struct NowPlayingView: View {
                 onRetry: onRetryQueue
             )
         }
-        .background(palette.background)
+        .background(palette.surface)
         .tint(palette.accent)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("now-playing.player")
@@ -173,12 +173,10 @@ private struct NowPlayingHero: View {
         HStack(spacing: DesignMetrics.space12) {
             Button(action: onClose) {
                 Label(backLabel, systemImage: "chevron.left")
-                    .labelStyle(.iconOnly)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(DesignTypography.bodyMedium)
                     .foregroundStyle(palette.textSecondary)
-                    .frame(width: 32, height: 32)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(ToolActionButtonStyle(kind: .quiet, compact: true))
             .accessibilityLabel(backLabel)
             .accessibilityIdentifier("now-playing.back")
             .help(backLabel)
@@ -362,39 +360,52 @@ private struct NowPlayingHero: View {
     }
 
     private func transport(_ snapshot: PlaybackIdentitySnapshot) -> some View {
-        HStack(spacing: 0) {
-            NowPlayingRateMenu(
-                rate: snapshot.rate,
-                onSetRate: onSetRate
-            )
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: DesignMetrics.space8) {
+                playbackRate(snapshot)
+                Spacer(minLength: 0)
+                transportButtons(snapshot)
+                Spacer(minLength: 0)
+                playbackRate(snapshot)
+                    .hidden()
+                    .accessibilityHidden(true)
+            }
 
-            Spacer(minLength: 0)
+            HStack(spacing: DesignMetrics.space8) {
+                playbackRate(snapshot)
+                Spacer(minLength: 0)
+                transportButtons(snapshot)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
 
+    private func playbackRate(_ snapshot: PlaybackIdentitySnapshot) -> some View {
+        NowPlayingRateMenu(rate: snapshot.rate, onSetRate: onSetRate)
+            .fixedSize()
+    }
+
+    private func transportButtons(_ snapshot: PlaybackIdentitySnapshot) -> some View {
+        HStack(spacing: DesignMetrics.space8) {
             NowPlayingTransportButton(
                 symbol: "gobackward.15",
                 label: "后退 15 秒",
                 enabled: canControlPlayback(snapshot),
                 action: onSkipBackward
             )
-
             NowPlayingPlayButton(
                 phase: snapshot.phase,
                 enabled: canControlPlayback(snapshot),
                 action: onTogglePlayback
             )
-
             NowPlayingTransportButton(
                 symbol: "goforward.30",
                 label: "前进 30 秒",
                 enabled: canControlPlayback(snapshot),
                 action: onSkipForward
             )
-            Spacer(minLength: 0)
-            // Match the rate control's width so transport stays centered.
-            Spacer(minLength: 0)
-                .frame(width: 44)
         }
-        .frame(maxWidth: .infinity)
+        .fixedSize()
     }
 
     private func canControlPlayback(_ snapshot: PlaybackIdentitySnapshot) -> Bool {
@@ -416,7 +427,7 @@ private struct NowPlayingOutputControl: View {
             isPresented.toggle()
         }
         .labelStyle(.iconOnly)
-        .buttonStyle(.borderless)
+        .buttonStyle(ToolIconButtonStyle())
         .frame(width: 32, height: 32)
         .accessibilityIdentifier("now-playing.output")
         .accessibilityValue("\(volumePercentage)%")
@@ -437,11 +448,12 @@ private struct NowPlayingOutputControl: View {
                     .foregroundStyle(palette.textSecondary)
             }
 
-            Slider(value: volumeBinding, in: 0...1, onEditingChanged: volumeEditingChanged)
-                .controlSize(.regular)
-                .accessibilityIdentifier("now-playing.volume")
-                .accessibilityLabel("播放音量")
-                .accessibilityValue("\(volumePercentage)%")
+            ToolSlider(
+                "播放音量", value: volumeBinding, in: 0...1, onEditingChanged: volumeEditingChanged
+            )
+            .accessibilityIdentifier("now-playing.volume")
+            .accessibilityLabel("播放音量")
+            .accessibilityValue("\(volumePercentage)%")
 
             HStack(spacing: DesignMetrics.space8) {
                 Text("输出设备")
@@ -551,7 +563,8 @@ private struct NowPlayingItemMenu: View {
                 .foregroundStyle(palette.textSecondary)
                 .frame(width: 32, height: 32)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(ToolIconButtonStyle())
         .menuIndicator(.hidden)
         .accessibilityIdentifier("now-playing.more")
         .accessibilityLabel("更多播放选项")
@@ -651,12 +664,13 @@ private struct NowPlayingProgressControl: View {
 
     var body: some View {
         VStack(spacing: DesignMetrics.space4) {
-            Slider(value: binding, in: 0...maximumDuration, onEditingChanged: editingChanged)
-                .controlSize(.small)
-                .disabled(!isPlayable || timeline.snapshot.duration <= 0)
-                .accessibilityIdentifier("now-playing.progress")
-                .accessibilityLabel("播放进度")
-                .help("拖动调整播放进度")
+            ToolSlider(
+                "播放进度", value: binding, in: 0...maximumDuration, onEditingChanged: editingChanged
+            )
+            .disabled(!isPlayable || timeline.snapshot.duration <= 0)
+            .accessibilityIdentifier("now-playing.progress")
+            .accessibilityLabel("播放进度")
+            .help("拖动调整播放进度")
 
             HStack(alignment: .center, spacing: DesignMetrics.space8) {
                 Text(PlaybackTimeFormatter.string(for: displayedTime))
@@ -733,9 +747,10 @@ private struct NowPlayingRateMenu: View {
             Text(rateLabel(rate))
                 .font(DesignTypography.bodyMedium)
                 .foregroundStyle(palette.textPrimary)
-                .frame(width: 44, height: 44)
+                .frame(minWidth: 36, minHeight: 24)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(ToolActionButtonStyle(kind: .secondary, compact: true))
         .menuIndicator(.hidden)
         .accessibilityIdentifier("now-playing.playback-rate")
         .accessibilityLabel("播放速度，当前 \(rateLabel(rate))")
@@ -759,11 +774,11 @@ private struct NowPlayingTransportButton: View {
         Button(action: action) {
             Label(label, systemImage: symbol)
                 .labelStyle(.iconOnly)
-                .font(.system(size: 18, weight: .medium))
+                .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(palette.textPrimary)
-                .frame(width: 44, height: 44)
+                .frame(width: 16, height: 16)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(ToolIconButtonStyle())
         .disabled(!enabled)
         .accessibilityLabel(label)
         .accessibilityIdentifier("now-playing.\(symbol)")
@@ -797,12 +812,9 @@ private struct NowPlayingPlayButton: View {
                     .font(.system(size: 18, weight: .semibold))
                 }
             }
-            .frame(width: 48, height: 48)
-            .foregroundStyle(palette.surface)
-            .background(palette.accent, in: Circle())
-            .contentShape(Circle())
+            .frame(width: 24, height: 24)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ToolActionButtonStyle(kind: .primary))
         .disabled(!enabled)
         .accessibilityIdentifier("now-playing.play")
         .accessibilityLabel(hasPlaybackIntent ? "暂停" : "播放")

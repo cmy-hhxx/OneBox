@@ -81,7 +81,10 @@ struct URLSessionHTTPTransport: HTTPTransporting {
         } catch {
             if isURLSessionCancellation(error) { throw ContentImportError.cancelled }
             if let error = error as? ContentImportError { throw error }
-            throw ContentImportError.platformUnavailable("网络请求失败，请稍后重试。")
+            throw ContentImportFailure(
+                underlying: error,
+                presentation: .platformUnavailable("网络请求失败，请稍后重试。")
+            )
         }
     }
 
@@ -98,7 +101,10 @@ struct URLSessionHTTPTransport: HTTPTransporting {
         } catch {
             if isURLSessionCancellation(error) { throw ContentImportError.cancelled }
             if let error = error as? ContentImportError { throw error }
-            throw ContentImportError.platformUnavailable("网络请求失败，请稍后重试。")
+            throw ContentImportFailure(
+                underlying: error,
+                presentation: .platformUnavailable("网络请求失败，请稍后重试。")
+            )
         }
     }
 
@@ -122,7 +128,10 @@ struct URLSessionHTTPTransport: HTTPTransporting {
         } catch {
             if isURLSessionCancellation(error) { throw ContentImportError.cancelled }
             if let error = error as? ContentImportError { throw error }
-            throw ContentImportError.platformUnavailable("网络请求失败，请稍后重试。")
+            throw ContentImportFailure(
+                underlying: error,
+                presentation: .platformUnavailable("网络请求失败，请稍后重试。")
+            )
         }
     }
 
@@ -144,7 +153,10 @@ struct URLSessionHTTPTransport: HTTPTransporting {
         } catch {
             if isURLSessionCancellation(error) { throw ContentImportError.cancelled }
             if let error = error as? ContentImportError { throw error }
-            throw ContentImportError.platformUnavailable("网络请求失败，请稍后重试。")
+            throw ContentImportFailure(
+                underlying: error,
+                presentation: .platformUnavailable("网络请求失败，请稍后重试。")
+            )
         }
     }
 }

@@ -170,6 +170,7 @@ struct PodPinLibraryView: View {
                 identity: store.playbackPresentation.identity,
                 queue: store.playbackQueue.session,
                 timeline: store.playbackPresentation.timeline,
+                isImportPage: isImportRouteActive,
                 onTogglePlayback: { store.togglePlayback() },
                 onRetryPlayback: { store.retryPlayback() },
                 onSkipBackward: { store.skipBackward() },
@@ -363,6 +364,7 @@ private struct CompactPlayerBar: View {
     @ObservedObject var identity: PlaybackIdentitySession
     @ObservedObject var queue: PlaybackQueueSession
     let timeline: PlaybackTimelineSession
+    let isImportPage: Bool
     let onTogglePlayback: () -> Void
     let onRetryPlayback: () -> Void
     let onSkipBackward: () -> Void
@@ -376,22 +378,47 @@ private struct CompactPlayerBar: View {
 
     var body: some View {
         HStack(spacing: DesignMetrics.space8) {
-            identityLabel
-            primaryControl
-            jumpMenu
-            CompactPlaybackSlider(
-                timeline: timeline,
-                phase: identity.snapshot.phase,
-                isPlayable: identity.snapshot.isPlayable,
-                onSeek: onSeek
-            )
-            .frame(minWidth: 130, maxWidth: .infinity)
+            if identity.snapshot.item == nil {
+                Image(systemName: "headphones")
+                    .font(DesignTypography.sectionTitle)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(width: DesignMetrics.titlebarControlSize)
+                    .accessibilityHidden(true)
+                if isImportPage {
+                    Text("添加音频后，即可在这里播放")
+                        .font(DesignTypography.body)
+                        .foregroundStyle(palette.textSecondary)
+                } else {
+                    Button("导入链接，开始收听", action: onImport)
+                        .buttonStyle(ToolActionButtonStyle(kind: .quiet, compact: true))
+                        .accessibilityLabel("导入公开链接开始收听")
+                        .help("从公开链接导入音频")
+                }
+                Spacer(minLength: DesignMetrics.space8)
+            } else {
+                identityLabel
+                primaryControl
+                jumpMenu
+                CompactPlaybackSlider(
+                    timeline: timeline,
+                    phase: identity.snapshot.phase,
+                    isPlayable: identity.snapshot.isPlayable,
+                    onSeek: onSeek
+                )
+                .frame(minWidth: 130, maxWidth: .infinity)
+            }
             rateControl
             queueButton
         }
         .frame(maxWidth: .infinity, minHeight: 56)
-        .padding(.vertical, DesignMetrics.space4)
-        .background(palette.background)
+        .padding(.horizontal, DesignMetrics.space12)
+        .padding(.vertical, DesignMetrics.space8)
+        .background(palette.surface, in: .rect(cornerRadius: DesignMetrics.cornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius)
+                .strokeBorder(palette.border, lineWidth: 1)
+                .allowsHitTesting(false)
+        }
         .accessibilityElement(children: .contain)
     }
 
@@ -403,6 +430,7 @@ private struct CompactPlayerBar: View {
                     .font(DesignTypography.bodyMedium)
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
+                    .help(item.title)
                 Text(item.author ?? "未知作者")
                     .font(DesignTypography.metadata)
                     .foregroundStyle(palette.textSecondary)
@@ -410,22 +438,6 @@ private struct CompactPlayerBar: View {
             }
             .frame(minWidth: 100, idealWidth: 144, maxWidth: 180, alignment: .leading)
             .accessibilityElement(children: .combine)
-        } else {
-            Button(action: onImport) {
-                VStack(alignment: .leading, spacing: DesignMetrics.space4) {
-                    Text("暂无播放内容")
-                        .font(DesignTypography.bodyMedium)
-                        .foregroundStyle(palette.textPrimary)
-                    Text("导入公开链接开始收听")
-                        .font(DesignTypography.metadata)
-                        .foregroundStyle(palette.accent)
-                }
-                .frame(minWidth: 100, idealWidth: 144, maxWidth: 180, alignment: .leading)
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("导入公开链接开始收听")
-            .help("打开导入")
         }
     }
 
@@ -442,15 +454,10 @@ private struct CompactPlayerBar: View {
         } else {
             Button(action: primaryAction) {
                 Image(systemName: primarySymbol)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.accent)
-                    .frame(
-                        width: DesignMetrics.titlebarControlSize,
-                        height: DesignMetrics.titlebarControlSize
-                    )
-                    .contentShape(.rect)
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 16, height: 16)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ToolActionButtonStyle(kind: .primary, compact: true))
             .disabled(!canUsePrimaryControl)
             .accessibilityIdentifier("compact-player.play")
             .accessibilityLabel(primaryLabel)
@@ -472,7 +479,8 @@ private struct CompactPlayerBar: View {
                 )
                 .contentShape(.rect)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(ToolIconButtonStyle())
         .menuIndicator(.hidden)
         .disabled(!canUseTransportControls)
         .accessibilityLabel("播放跳转")
@@ -489,7 +497,7 @@ private struct CompactPlayerBar: View {
                 .frame(width: 40, height: DesignMetrics.titlebarControlSize)
                 .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ToolActionButtonStyle(kind: .quiet, compact: true))
         .accessibilityLabel("播放速度")
         .accessibilityValue(rateLabel)
         .help("切换播放速度")
@@ -506,7 +514,7 @@ private struct CompactPlayerBar: View {
             .frame(width: 44, height: DesignMetrics.titlebarControlSize)
             .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ToolActionButtonStyle(kind: .quiet, compact: true))
         .accessibilityLabel("打开正在播放与队列")
         .accessibilityValue("\(queue.count) 项待播")
         .help("打开正在播放与队列")
@@ -565,14 +573,15 @@ private struct CompactPlaybackSlider: View {
                 .foregroundStyle(palette.textSecondary)
                 .frame(minWidth: 36, alignment: .trailing)
 
-            Slider(value: seekBinding, in: 0...validDuration, onEditingChanged: updateScrubbing)
-                .controlSize(.small)
-                .tint(palette.accent)
-                .disabled(!canSeek)
-                .accessibilityLabel("播放进度")
-                .accessibilityValue(
-                    "\(PlaybackTimeFormatter.string(for: displayedTime))，共 \(PlaybackTimeFormatter.string(for: validDuration))"
-                )
+            ToolSlider(
+                "播放进度", value: seekBinding, in: 0...validDuration, onEditingChanged: updateScrubbing
+            )
+            .tint(palette.accent)
+            .disabled(!canSeek)
+            .accessibilityLabel("播放进度")
+            .accessibilityValue(
+                "\(PlaybackTimeFormatter.string(for: displayedTime))，共 \(PlaybackTimeFormatter.string(for: validDuration))"
+            )
 
             Text(PlaybackTimeFormatter.string(for: validDuration))
                 .font(DesignTypography.metadata.monospacedDigit())
@@ -738,7 +747,7 @@ private struct FolderDestinationSheet: View {
                     onConfirm(destinationID)
                     dismiss()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(ToolActionButtonStyle(kind: .primary))
                 .keyboardShortcut(.defaultAction)
             }
             .font(DesignTypography.body)
@@ -771,7 +780,7 @@ private struct LibraryUnavailableView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 440)
             Button("重试", action: retry)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(ToolActionButtonStyle(kind: .primary))
         }
         .padding(DesignMetrics.space24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

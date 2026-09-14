@@ -1,11 +1,48 @@
 # UI 验收
 
-强制视觉契约见 [设计规范](design.md)。本文件只记录可复现步骤和当前未验证项；截图不进入版本库。以下人工路线是交付前待执行清单，不表示本次文档更新已经完成这些验证。
+强制视觉契约见 [设计规范](design.md)。本文件区分已获得的原生静态渲染证据与待执行的端到端路线；截图存于忽略的 `.build/DesignReview/`，不进入版本库。
+
+## 侧栏与检查器收合
+
+共享检查器的逐帧回归覆盖首次打开、初始展开、正常关闭、60ms 内反向、队列连续四次反向和 Reduce Motion；主内容实例始终保持一个。旧实现的采样宽度直接跳到终点，修复后开启动画经过中间宽度，减少动态效果时仅出现起终点。原生确认回写与延迟挂载分别验证，过渡期间忽略旧的原生完成回写，面板稳定后才接受原生关闭请求；自有按钮与 Escape 始终立即接受新请求，避免关闭后重新打开。
+
+左侧导航按 260、212、60pt 与中间裁切宽度验证选中行基线不变，品牌、折叠按钮、日志按钮保留稳定身份。主区与右侧检查器新增 12pt 间距，原生标题栏固定 36pt；窄主区参考宽度更新为 356pt。最终截图与执行记录位于 `.build/DesignReview/sidebar-polish/`、`.build/Logs/sidebar-polish-check.log`，最终完整检查已通过四个包和 App 集成测试。重启新构建后已实查左侧连续收合、右侧首次展开、Escape、工具栏连续开关和关闭后完整宽度恢复；12pt 留白与标题栏对齐也已核对。
+
+## BoardUI 验证状态
+
+当前有效设计依据为 [BoardUI 原生适配](boardui-native.md)。下面记录 BoardUI 迁移后的源代码、原生渲染与局部测试；较早 Uiverse 迭代的检查不计为当前界面的通过证据。
+
+| 范围 | 当前结果与参考图 | 实际覆盖 |
+| --- | --- | --- |
+| PodPin | 21 项相关测试通过；`boardui-round2/` 下 13 张 PNG | 导航 17 项、布局 1 项、播放呈现 2 项、原生渲染 1 项；716×510pt／616×418pt 资料库、空集合、导入、播放器、队列主区，320pt 队列正文与 420pt 文件夹编辑 |
+| 股票看盘 | 原生渲染用例通过；`boardui-round2/` 下 16 张 PNG | 716pt／616pt 及 350pt 窄行情区，248pt 检查器、禁用／百分比／目标价提醒，添加／JSON、上一交易日、失败、空态与长名称 |
+| ASCII | 3 项原生渲染测试通过；`boardui/` 下 8 张 PNG | 716×510pt／616×418pt／368×418pt 工作区，原生检查器展开后的主区布局，248pt 参数正文、自定义字符与错误状态 |
+| 共享 Slider | 4 项几何／步进测试通过，并经 ASCII 与 PodPin 渲染 | 比例、边界、步进与三工具实际接入；拖动和编辑完成通过原 Binding／回调连接 |
+| Host 与调试日志 | Core 测试通过；`boardui-delivery/` 下 5 张 PNG | 日志正文 880×600pt、680×440pt、活跃控件状态；260pt 展开侧栏及 60pt 图标栏；这些参考图不代表内嵌日志的整窗布局验收 |
+
+这些引用目录均位于 `.build/DesignReview/`。测试采用 `NSHostingView`、`NSWindow` 与受控本地数据，资料库使用隔离的内存数据库和临时目录；渲染过程不访问真实公开行情或音频服务。设置 `ONEBOX_UI_SNAPSHOT_DIRECTORY` 时输出 PNG，未设置时通过 XCTAttachment 保留参考图。
+
+本轮先安装并读取真实 BoardUI 源码，再移植共享控件与三个工具，最后根据原生截图修正表头 8pt 对齐、输入占位／焦点、缩窄后的播放器布局和控件尺寸。完整 `./scripts/check.sh` 已通过四个 package 和 17 项 App 集成测试，最终 Debug App 构建通过。最终原生参考图集中于 `boardui-delivery/`（42 张）。独立复查提出的图标按钮和复选框一致性问题已修复并复验通过。
+
+已退出旧进程并重新启动最新 BoardUI 构建，实查展开／60pt 收合侧栏、ASCII Metal 画面、原生参数检查器、滑块值 60%→70%→60%、反色开关及 Escape 关闭。用临时无效 PNG 验证「原生文件导入→错误横幅→当前模块日志→复制此条→粘贴核对」；复制结果包含日期、毫秒、时区、模块、操作和原始错误。该临时会话随后退出并以干净状态重启。股票看盘的真实主窗口、原生检查器与工具切换也已实查；其他未执行的路线仍列于后文。
+
+可从仓库根目录单独复现 PodPin 参考图：
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+ONEBOX_UI_SNAPSHOT_DIRECTORY="$PWD/.build/DesignReview/current" \
+xcrun swift test --package-path Packages/Tools/PodPinTool \
+  --scratch-path .build/SwiftPM/PodPinTool --filter PodPinVisualValidationTests
+```
+
+其他原生渲染 suite 为 OneBoxCore 的 `DebugLogLayoutTests`、AsciiArtTool 的 `AsciiVisualValidationTests` 和 StockWatchTool 的 `StockWatchVisualValidationTests`。
+
+`NSView.cacheDisplay` 不包含 `CAMetalLayer`，也不能完整捕获原生 inspector 的独立呈现容器。参考图检查 SwiftUI 控件和主区布局；ASCII 参数、股票检查器和 PodPin 队列正文另行渲染。Metal 画面、原生检查器整体呈现、键鼠手感及辅助技术通过以下 App 运行路线验收。
 
 ## 运行
 
 1. 在 Apple Silicon 本机运行 `./scripts/check.sh`。
-2. 从 Xcode 运行 `OneBox`，或启动 Debug 产物：
+2. 先退出已运行的 OneBox 旧进程，再从 Xcode 运行 `OneBox` 或启动 Debug 产物。只更新磁盘上的 App 不会重新加载已有进程：
    - 默认窗口：`.build/DerivedData/Build/Products/Debug/OneBox.app/Contents/MacOS/OneBox --ui-default`
    - 最小窗口：`.build/DerivedData/Build/Products/Debug/OneBox.app/Contents/MacOS/OneBox --ui-minimum`
    - 宽屏和纵向窗口：从任一状态分别只增加宽度、只增加高度；`--ui-*` 只设置首次尺寸，不锁定宽高比。
@@ -14,7 +51,9 @@
    - 股票看盘：`./scripts/benchmark-stock-watch.sh`
    - PodPin：`./scripts/benchmark-podpin.sh`
 
-`--ui-dark`、`--ui-minimum` 和 `--ui-default` 只在 Debug 构建生效；深色只用于检查结构，不是产品外观或验收目标。隔离的 `--ui-testing` 由 Debug/Release UI 测试使用，但必须同时提供位于系统临时目录内的专用数据根；只有同时带上该隔离参数时，`--ui-reduce-motion` 才会在组合根注入测试专用 override，PodPin 路由以“override 优先、系统 Reduce Motion 兜底”计算同一个分支，且不修改系统偏好。固定 Apple Silicon 流程会先通过独立的 Release `OneBoxUI` scheme 执行 `OneBoxUITests` 确定性交互检查（包括 Reduce Motion push/pop 无横向位移），再使用隔离的 DerivedData 执行时序性能计划。Release 性能计划可再把测试 bundle 中的 PodPin 音频复制到该根后注入，既不读取用户数据，也不把 fixture 打进 Release App。Release package benchmark 在 `.build/Logs` 保留原始日志和 JSON 环境报告；`OneBoxPerformance` UI 测试计划保留 xcresult。
+调试日志可从侧栏或 `⇧⌘L` 在主窗口底部展开、收起；给可执行文件附加 `--debug-mode` 可从启动时开始采集。该开关与编译配置独立，不要求 `--ui-testing`。
+
+`--ui-dark`、`--ui-minimum` 和 `--ui-default` 只在 Debug 构建生效；全局深色只用于检查结构，不是产品外观或验收目标；股票选中标的的大图使用局部深色绘图区，属于产品外观。隔离的 `--ui-testing` 由 Debug/Release UI 测试使用，但必须同时提供位于系统临时目录内的专用数据根；只有同时带上该隔离参数时，`--ui-reduce-motion` 才会在组合根注入测试专用 override，PodPin 路由以“override 优先、系统 Reduce Motion 兜底”计算同一个分支，且不修改系统偏好。固定 Apple Silicon 流程会先通过独立的 Release `OneBoxUI` scheme 执行 `OneBoxUITests` 确定性交互检查（包括 Reduce Motion push/pop 无横向位移），再使用隔离的 DerivedData 执行时序性能计划。Release 性能计划可再把测试 bundle 中的 PodPin 音频复制到该根后注入，既不读取用户数据，也不把 fixture 打进 Release App。Release package benchmark 在 `.build/Logs` 保留原始日志和 JSON 环境报告；`OneBoxPerformance` UI 测试计划保留 xcresult。
 
 ## 通用人工路线
 
@@ -31,6 +70,19 @@
 | Reduce Motion | PodPin push/pop、检查器、提醒 | 路由最多 100ms 淡变且无横向位移；高频内容不随呈现动画移动 |
 | 键盘 | 三工具主路径、Escape、返回 | 完整键盘可达，文本输入不被抢占，返回按钮语义与目的地一致 |
 | VoiceOver | 检查器、PodPin 路由、确认和错误 | 名称、状态、错误和不可逆影响可读；关闭后焦点回到发起控件 |
+| BoardUI 控件 | 输入静态／悬停／聚焦／禁用，开关、分段选择、滑块 | Inter 与中文回退可读；原生编辑保留，内边框与占位状态正确，方向键切换分段值／滑块值，控件状态与业务一致 |
+| 侧栏 | 260pt、窄窗口 212pt、60pt 折叠栏 | 300ms 过渡，三个工具与调试入口一直可达；减少动态效果时立即切换 |
+| 内嵌日志 | 收起、展开、拖动高度、检查器同时展开 | 不新增窗口；上方工具保持状态与操作区域；日志列表和详情可滚动，关闭只收起日志 |
+
+## 调试日志人工路线
+
+1. 首次启动时打开日志，检查调试模式默认关闭；开启后分别重现 ASCII 无效图片导入、股票看盘断网刷新、PodPin 无效公开链接导入。确认记录归属三个大模块，原始错误包含对应操作和发生时间，开启前的错误不会补录。
+2. 从股票看盘侧栏展开日志，确认默认筛选“股票看盘”，上方仍停留原工具且可以重试；切换日志模块不切换工具。侧栏或 `⇧⌘L` 再次触发会收起，快捷键重新展开时保持已有日志筛选。分别从三个工具的错误提示进入日志，确认始终展开并筛选对应模块。
+3. 按模块、操作、错误正文及复制文本中的时间片段搜索；比较列表本地时分秒与详情 ISO 8601 的毫秒、时区。复制单条（按钮及 `⇧⌘C`）和筛选结果，确认内容完整、顺序为新到旧，反馈显示“已复制”。
+4. 使用受控错误检查最深层 underlying error、domain/code、失败原因及调试描述；用户路径、临时路径、URL 查询/凭据和授权字段应脱敏。取消导入、取消搜索或切走工具引起的任务取消不新增错误。
+5. 关闭调试模式后重现问题，确认停止新增且历史可复制；清空后列表保持空，不被迟到任务填回。受控注入超过 500 条时，只保留最近记录并显示淘汰数量。退出重启后日志为空，调试开关保留。
+6. 主窗口在默认、最小、加宽和加高尺寸展开日志，拖动分隔线调整高度，检查上方工具、列表/详情、长错误文本和键盘操作；检查默认自动换行与关闭换行后的横向滚动，复制内容保持一致。确认全程没有新增窗口，关闭按钮只收起日志；VoiceOver 能读出模块、开关、时间、操作及错误正文。
+7. 在保留 ASCII 参数草稿、股票选中行或 PodPin 导入草稿的状态下连续展开、收起日志，并与右侧检查器同时展开。确认工具内容没有重建、股票刷新没有因日志操作而取消、PodPin 已开始的播放和下载继续；收起日志恢复工作区高度，已有日志、调试开关及搜索筛选保留。
 
 ## ASCII 工坊人工路线
 
@@ -63,13 +115,13 @@
 
 1. 首次打开和再次切走/切回各录制一次 SwiftUI Instrument 与 Hangs；热重入必须直接保留已有内容，不出现 loading 空白帧，缓存命中时首屏查询数为 0。
 2. 分别用 1,000 和 10,000 节点 fixture 展开根与当前选中路径；确认只渲染扁平化后的可见行，并按 [工程规范](engineering.md) 达到 P95 门槛。
-3. 在批量下载进度、播放进度和行情更新时开关 inspector 或路由；确认高频值没有继承 180ms 路由事务，首值、完成和失败立即出现。
+3. 在批量下载进度、播放进度和行情更新时开关 inspector 或路由；确认高频值没有继承 300ms 路由事务，首值、完成和失败立即出现。
 
 ## 股票看盘人工路线
 
 ### 窗口、长列表和颜色
 
-1. 在默认和最小窗口选择“股票看盘”，分别展开和折叠宿主侧栏。检查 loading、成功内容、空列表和启动失败页面不会重复产品品牌或工具标题。
+1. 在默认和最小窗口选择“股票看盘”，分别展开和折叠宿主侧栏。检查 loading、成功内容、空列表和启动失败页面保留宿主工具标题与用途，工作区不重复品牌标题。
 2. 确认检查器初始收起，再在最小、默认、宽屏和纵向窗口打开：始终使用原生右侧 248pt trailing inspector，不得覆盖行情表或产生水平滚动。窄行情行必须保留名称、代码/状态、价格和涨跌方向，仅隐藏分时；关闭后行情表恢复空间。
 3. 用受控有效 JSON 建立足以滚动的长列表，连续滚动、选择、拖动排序、用检查器上下移和移除；确认行高、稳定列、选中底色和操作反馈不跳动，重进工具后顺序保持。
 4. 对 A股/港股检查红涨绿跌，对美股检查绿涨红跌，对持平检查中性色。每个方向必须同时有正负号、箭头和 VoiceOver 文本。A股收盘复盘的 B/S 标记必须保持在图内并可读出含义。
@@ -80,6 +132,7 @@
 2. 在受控断网下检查全量失败、恢复网络后的重试，以及部分 provider 失败；已成功缓存保留，工具条或对应行状态说明来源问题，界面不承诺恢复时间。
 3. 用测试用用户目录或失败数据库 adapter 分别触发启动、观察列表写入、提醒写入和缓存清理错误；检查默认/最小窗口中的错误文案、优先级、重试或关闭提示。错误不显示搜索词、自选内容或完整请求，数据库路径只在专门诊断控件中展示。
 4. 在工具刷新中切换到其他工具，确认视图 task 取消后没有新的搜索或行情请求，待保存提醒已 flush，数据库可再次打开。窗口只被遮挡、失焦或最小化不属于此路线的停机断言。
+5. 在周末或连续多日无新行情的受控场景刷新上一交易日快照：报价、涨跌幅和分时保持显示，行内以中性文字标明实际行情日期，检查器显示“最近交易日价格”。重复刷新不新增日期校验日志或错误横幅，不触发价格提醒；网络失败、更旧响应和未来日期仍按错误处理。
 
 ### 搜索和 JSON
 
@@ -106,18 +159,24 @@
 
 2026-09-07 在 Apple Silicon / macOS 26.6.1 的 Release 构建中，用 SwiftUI Instruments 记录 ASCII 参数、PodPin 进入/队列和股票看盘切换。基线的 `NowPlayingRoutePicker` 最长单次布局为 32.94ms；按需构建后，同一导航路线不再产生该视图的更新。前后各一次约 45 秒轨迹均未报告 ≥250ms hang。这是热点定位证据，不是 30 次固定机 P95、滚动帧率或全局流畅度验收。耗时表与脱敏汇总保存在忽略的 `.build/Logs/`；原始 trace 含进程环境，分析后已删除，不作为可分享附件。
 
-该机器的 Xcode UI runner 因 macOS 身份认证取消而未能初始化，不能将新增 UI 断言标记为已自动通过。桌面操作已检查最小窗口的 ASCII 主操作、PodPin 队列、音量 popover 和 Escape 保留播放器；VoiceOver、Voice Control、Switch Control 与 macOS 15 仍需完整矩阵验证。
+历史环境限制：较早的 Xcode UI runner 运行曾因 macOS 身份认证取消及 `Timed out while enabling automation mode` 无法初始化，ScreenCaptureKit 也曾报告捕获失败。这些是端到端验证的已知限制；本轮通过的BoardUI 原生 bitmap 渲染不依赖该 UI runner。当前运行结果以本轮报告为准。
 
 ## 当前未验证
 
-- 上述股票看盘人工路线，包括最小/默认/宽屏/纵向窗口、宽/窄行情行切换、长列表、错误/stale、真实搜索与 provider fallback、JSON、提醒声音和数据诊断。
-- 股票看盘视图取消后的真实在途网络请求与离屏零请求端到端验证。
-- 实体触控板捏合手感。
-- VoiceOver、Voice Control、Switch Control 和 Full Keyboard Access 的端到端任务。
-- ASCII 和股票看盘错误横幅在最小、默认、宽屏和纵向窗口的视觉状态。
-- PodPin 内容区、次级路由和队列 inspector 在最小、默认、宽屏和纵向窗口的完整人工视觉构图，以及浏览器 Profile 的真实 Keychain 授权、真实抖音下载、系统媒体键和输出设备切换。
-- 自动化已覆盖测试环境中的 PodPin Reduce Motion push/pop 横向位移；真实系统偏好下的淡变时长、录屏构图，以及 VoiceOver、Voice Control、Switch Control 和 Full Keyboard Access 联合 smoke 仍需人工验收。
-- 检查器关闭后的焦点恢复保持人工验收：当前 macOS XCTest 的 `XCUIElement` 不暴露可查询的键盘焦点状态；自动化只验证关闭后发起控件重新存在且可立即操作。
-- 独立 PodPin 与 OneBox 同时访问旧资料库；该组合不在支持范围内。
-- 窗口截图自动化受系统权限限制时，无法据此声称视觉构图已验收。
-- `./scripts/benchmark-ascii.sh`、`./scripts/benchmark-stock-watch.sh` 与 `./scripts/benchmark-podpin.sh` 的本机 Release 基准，除非本次交付另附实际运行结果。
+- BoardUI App 的真实最小、加宽和加高完整构图；默认窗口的浮动／图标侧栏、ASCII Metal 和原生参数检查器已实查，静态最小布局另有参考图。
+- PodPin 与行情网络真实失败的日志人工路线、超长错误和辅助技术；ASCII 失败到日志复制的完整操作已实查。
+- 股票看盘真实搜索、provider fallback、JSON 确认、提醒声音、在途网络取消与离屏零请求；周末／上一交易日的受控静态状态已有参考图，真实端点行为仍按人工路线检查。
+- 实体触控板捏合、长列表滚动、完整键盘任务，以及 VoiceOver、Voice Control、Switch Control 和 Full Keyboard Access 的端到端使用。
+- PodPin 真实浏览器 Profile／Keychain 授权、抖音下载、系统媒体键、输出设备和物理声音；资料库、导入与队列正文的默认／最小静态布局已有参考图。
+- 已有 UI 断言覆盖 PodPin Reduce Motion push/pop 横向位移；本轮的真实系统偏好、淡变时长和录屏构图仍需执行对应路线。检查器焦点恢复需人工确认，macOS XCTest 的 `XCUIElement` 不直接暴露键盘焦点状态。
+- macOS 15 与当前支持版本的完整人工 smoke，以及三套本机 Release benchmark 和固定机 Instruments 性能矩阵，除非本次交付另附实际运行结果。
+
+独立 PodPin 与 OneBox 同时访问旧资料库不在支持范围内，验收时只运行一个资料库 owner。
+
+## 股票分时图清晰度
+
+- 在默认、最小和检查器展开后的宽度检查：有足够纵向空间时，观察列表下方显示选中标的大图；日志展开挤压高度时保留可操作列表与清晰缩略线。
+- 以 0.538 左右的低价 ETF 和平盘数据核对价格轴，显示昨收、开盘及真实分钟价格的完整范围；不使用固定 0.01 留白压平走势。
+- 大图价格轴和交易时段刻度清晰，午休折叠仍标出上午/下午边界；早盘数据不填满未来交易时段。
+- 悬停显示十字线、原始分钟时间和价格；点击图表后可用左右方向键逐点查看。B/S 只表示收盘复盘，沿用有序价差定义。
+- `StockWatchVisualValidationTests.testLowPriceETFChartAndWorkspaceRendersAtSupportedSizes` 生成低价 ETF 的 716/356pt 图表以及 510/418/240pt 工作区参考。截图仍保存到忽略目录。

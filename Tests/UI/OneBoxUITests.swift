@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 final class OneBoxUITests: XCTestCase {
@@ -22,6 +23,45 @@ final class OneBoxUITests: XCTestCase {
 
         app = nil
         dataRootURL = nil
+    }
+
+    @MainActor
+    func testDiagnosticsShowsAndCopiesRawModuleFailure() throws {
+        let storage = dataRootURL.appendingPathComponent("OneBox/StockWatch", isDirectory: true)
+        try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
+        try Data("invalid SQLite fixture".utf8).write(
+            to: storage.appendingPathComponent("marketsprite.sqlite")
+        )
+        app = try makeApplication(additionalArguments: ["--debug-mode"])
+        defer { app.terminate() }
+        let mainWindow = launchAndWaitForMainWindow()
+        selectTool("股票看盘")
+        let openLogs = app.buttons["onebox.openDiagnostics"]
+        XCTAssertTrue(openLogs.waitForExistence(timeout: 5))
+        openLogs.click()
+        let logs = mainWindow.descendants(matching: .any)["debug.logs"]
+        XCTAssertTrue(logs.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.windows["OneBox · 调试日志"].exists)
+        XCTAssertTrue(mainWindow.exists, "Diagnostics must stay inside the main tool window.")
+        let copy = mainWindow.buttons["debug.copySelected"]
+        XCTAssertTrue(copy.waitForExistence(timeout: 8))
+        copy.click()
+        let text = try XCTUnwrap(NSPasteboard.general.string(forType: .string))
+        XCTAssertTrue(text.contains("[股票看盘]"))
+        XCTAssertTrue(text.contains("file is not a database"))
+        XCTAssertFalse(text.contains(dataRootURL.path))
+        let attachment = XCTAttachment(screenshot: mainWindow.screenshot())
+        attachment.name = "debug-original-error"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        mainWindow.buttons["清空"].click()
+        XCTAssertTrue(copy.waitForNonExistence(timeout: 3))
+        app.typeKey("l", modifierFlags: [.command, .shift])
+        XCTAssertTrue(logs.waitForNonExistence(timeout: 3))
+        app.typeKey("l", modifierFlags: [.command, .shift])
+        XCTAssertTrue(logs.waitForExistence(timeout: 3))
+        mainWindow.buttons["debug.close"].click()
+        XCTAssertTrue(logs.waitForNonExistence(timeout: 3))
     }
 
     @MainActor
@@ -132,6 +172,38 @@ final class OneBoxUITests: XCTestCase {
             .appendingPathComponent("OneBox/StockWatch", isDirectory: true)
             .appendingPathComponent("marketsprite.sqlite", isDirectory: false)
         XCTAssertTrue(FileManager.default.fileExists(atPath: stockWatchDatabase.path))
+    }
+
+    @MainActor
+    func testPodPinTransportControlsDoNotOverlapBesideQueueAtMinimumWidth() throws {
+        app = try makeApplication(additionalArguments: ["--ui-minimum"])
+        defer { app.terminate() }
+        let window = launchAndWaitForMainWindow()
+        selectTool("PodPin")
+        let nowPlaying = app.buttons["workspace.now-playing"]
+        XCTAssertTrue(nowPlaying.waitForExistence(timeout: 8))
+        nowPlaying.click()
+        let queueToggle = app.buttons["now-playing.queue-toggle"]
+        XCTAssertTrue(queueToggle.waitForExistence(timeout: 5))
+        queueToggle.click()
+        XCTAssertTrue(app.otherElements["now-playing.queue"].waitForExistence(timeout: 5))
+
+        let rate = app.descendants(matching: .any)["now-playing.playback-rate"].firstMatch
+        let backward = app.buttons["now-playing.gobackward.15"]
+        let play = app.buttons["now-playing.play"]
+        let forward = app.buttons["now-playing.goforward.30"]
+        let controls = [rate, backward, play, forward]
+        for control in controls {
+            XCTAssertTrue(control.waitForExistence(timeout: 3))
+            assertControlIsInsideWindow(control, window: window)
+        }
+        for (index, control) in controls.enumerated() {
+            for neighbor in controls.dropFirst(index + 1) {
+                XCTAssertFalse(
+                    control.frame.intersects(neighbor.frame),
+                    "Playback controls overlap: \(control.identifier), \(neighbor.identifier)")
+            }
+        }
     }
 
     @MainActor

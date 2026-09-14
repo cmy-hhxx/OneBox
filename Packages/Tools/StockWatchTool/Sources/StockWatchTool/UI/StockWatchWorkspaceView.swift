@@ -35,7 +35,7 @@ struct StockWatchWorkspaceView: View {
     }
 
     var body: some View {
-        VStack(spacing: DesignMetrics.space8) {
+        VStack(spacing: DesignMetrics.space16) {
             StockWatchToolbar(
                 store: store,
                 isInspectorPresented: isInspectorPresented,
@@ -52,7 +52,7 @@ struct StockWatchWorkspaceView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .toolInspector(
             isPresented: $isInspectorPresented,
-            title: "检查器",
+            title: "标的与提醒",
             closeLabel: "关闭检查器",
             onDismiss: restoreInspectorButtonFocus
         ) {
@@ -99,13 +99,26 @@ struct StockWatchWorkspaceView: View {
                 .transition(
                     reduceMotion
                         ? .opacity
-                        : .move(edge: .top).combined(with: .opacity)
+                        : .asymmetric(
+                            insertion: .modifier(
+                                active: StockWatchNotificationMotion(
+                                    opacity: 0, translation: 12, scale: 0.97, blur: 4
+                                ),
+                                identity: .identity
+                            ).animation(.easeOut(duration: 0.25)),
+                            removal: .modifier(
+                                active: StockWatchNotificationMotion(
+                                    opacity: 0, translation: 8, scale: 0.96, blur: 3
+                                ),
+                                identity: .identity
+                            ).animation(.easeOut(duration: 0.18))
+                        )
                 )
                 .zIndex(1)
             }
         }
         .animation(
-            reduceMotion ? .easeInOut(duration: 0.12) : .easeOut(duration: 0.18),
+            reduceMotion ? .easeInOut(duration: 0.1) : .easeOut(duration: 0.25),
             value: alertPresentation.activeAlert?.id
         )
     }
@@ -160,5 +173,22 @@ struct StockWatchWorkspaceView: View {
             return
         }
         selectedInstrumentID = watchlistPresentation.instruments.first?.id
+    }
+}
+
+private struct StockWatchNotificationMotion: ViewModifier {
+    let opacity: Double
+    let translation: CGFloat
+    let scale: CGFloat
+    let blur: CGFloat
+
+    static let identity = Self(opacity: 1, translation: 0, scale: 1, blur: 0)
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(opacity)
+            .scaleEffect(scale)
+            .blur(radius: blur)
+            .offset(y: translation)
     }
 }

@@ -2,6 +2,17 @@ import OneBoxDesignSystem
 import SwiftUI
 
 enum SelectedInstrumentQuotePresentation {
+    static func marketTimeText(_ date: Date, market: Market) -> String {
+        let format = Date.FormatStyle(
+            date: .numeric,
+            time: .shortened,
+            locale: Locale(identifier: "zh_CN"),
+            timeZone: market.timeZone
+        )
+        return
+            "\(date.formatted(format)) · \(market.timeZone.abbreviation(for: date) ?? market.timeZone.identifier)"
+    }
+
     static func livePrice(status: MonitorStatus?, lastPrice: Double?) -> Double? {
         guard status == .live,
             let lastPrice,
@@ -12,6 +23,16 @@ enum SelectedInstrumentQuotePresentation {
         }
         return lastPrice
     }
+
+    static func priceLabel(status: MonitorStatus?, lastPrice: Double?) -> String {
+        if livePrice(status: status, lastPrice: lastPrice) != nil {
+            return tr("当前价格")
+        }
+        if status == .previousSession {
+            return tr("最近交易日价格")
+        }
+        return tr("缓存价格")
+    }
 }
 
 @MainActor
@@ -21,7 +42,6 @@ struct SelectedInstrumentInspectorSection: View {
 
     private let watchlistPresentation: WatchlistPresentationSession
     private let quotePresentation: QuotePresentationSession
-    private let alertPresentation: AlertPresentationSession
 
     @Environment(\.designPalette) private var palette
     @State private var removalCandidate: Instrument?
@@ -31,7 +51,6 @@ struct SelectedInstrumentInspectorSection: View {
         self.selectedInstrumentID = selectedInstrumentID
         self.watchlistPresentation = store.watchlistPresentation
         self.quotePresentation = store.quotePresentation
-        self.alertPresentation = store.alertPresentation
     }
 
     private var selectedInstrument: Instrument? {
@@ -39,15 +58,10 @@ struct SelectedInstrumentInspectorSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.space12) {
-            Text("所选标的")
-                .font(DesignTypography.sectionTitle)
-                .accessibilityAddTraits(.isHeader)
-
+        VStack(alignment: .leading, spacing: DesignMetrics.space16) {
             if let instrument = selectedInstrument {
                 identity(instrument)
                 actions(instrument)
-                targetPriceControls(instrument)
             } else {
                 Label("请在行情列表中选择一个标的", systemImage: "cursorarrow.click")
                     .font(DesignTypography.metadata)
@@ -79,36 +93,56 @@ struct SelectedInstrumentInspectorSection: View {
 
     private func identity(_ instrument: Instrument) -> some View {
         let monitored = quotePresentation.snapshot.monitoredInstruments[instrument.id]
-        let livePrice = SelectedInstrumentQuotePresentation.livePrice(
-            status: monitored?.status,
-            lastPrice: monitored?.quote?.lastPrice
-        )
-
         return VStack(alignment: .leading, spacing: DesignMetrics.space4) {
             Text(instrument.name)
-                .font(DesignTypography.bodyMedium)
-                .lineLimit(1)
+                .font(DesignTypography.sectionTitle)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
             Text("\(instrument.symbol) · \(instrument.namespace.displayName)")
                 .font(DesignTypography.metadata)
                 .monospacedDigit()
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(1)
 
-            if let livePrice {
-                Text(
-                    String(
-                        format: tr("现价 %@%.2f"),
-                        instrument.market.currencySymbol,
-                        livePrice
+            if let quote = monitored?.quote {
+                VStack(alignment: .leading, spacing: DesignMetrics.space4) {
+                    Text(
+                        "\(instrument.market.currencySymbol)\(InstrumentRowPresentation.priceText(quote.lastPrice))"
                     )
-                )
-                .font(DesignTypography.metadata)
-                .monospacedDigit()
-                .foregroundStyle(palette.textSecondary)
+                    .font(DesignTypography.metric)
+                    .monospacedDigit()
+
+                    HStack(spacing: DesignMetrics.space4) {
+                        Image(systemName: monitored?.status == .live ? "checkmark.circle" : "clock")
+                        Text(
+                            SelectedInstrumentQuotePresentation.priceLabel(
+                                status: monitored?.status,
+                                lastPrice: quote.lastPrice
+                            )
+                        )
+                    }
+                    .font(DesignTypography.metadata)
+                    .foregroundStyle(palette.textSecondary)
+                    Text(
+                        SelectedInstrumentQuotePresentation.marketTimeText(
+                            quote.marketTime, market: instrument.market)
+                    )
+                    .font(DesignTypography.metadata)
+                    .monospacedDigit()
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("行情时间，交易所时区")
+                    .accessibilityValue(
+                        SelectedInstrumentQuotePresentation.marketTimeText(
+                            quote.marketTime, market: instrument.market)
+                    )
+                }
+                .padding(.top, DesignMetrics.space8)
             } else {
                 Text("等待实时价格")
                     .font(DesignTypography.metadata)
                     .foregroundStyle(palette.textSecondary)
+                    .padding(.top, DesignMetrics.space8)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -122,7 +156,7 @@ struct SelectedInstrumentInspectorSection: View {
                 move(instrument, direction: -1)
             }
             .labelStyle(.iconOnly)
-            .buttonStyle(.bordered)
+            .buttonStyle(ToolIconButtonStyle())
             .disabled(index == nil || index == 0 || watchlistPresentation.isMutating)
             .help("在观察列表中上移")
             .accessibilityLabel("上移 \(instrument.name)")
@@ -131,7 +165,7 @@ struct SelectedInstrumentInspectorSection: View {
                 move(instrument, direction: 1)
             }
             .labelStyle(.iconOnly)
-            .buttonStyle(.bordered)
+            .buttonStyle(ToolIconButtonStyle())
             .disabled(
                 index == nil
                     || index == watchlistPresentation.instruments.count - 1
@@ -145,10 +179,56 @@ struct SelectedInstrumentInspectorSection: View {
             Button("移除", systemImage: "trash", role: .destructive) {
                 removalCandidate = instrument
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(ToolActionButtonStyle(kind: .quiet, compact: true))
             .disabled(watchlistPresentation.isMutating)
         }
         .controlSize(.small)
+    }
+
+    private func move(_ instrument: Instrument, direction: Int) {
+        guard
+            let index = watchlistPresentation.instruments.firstIndex(where: {
+                $0.id == instrument.id
+            })
+        else {
+            return
+        }
+        let destination = direction < 0 ? index - 1 : index + 2
+        Task {
+            await store.moveInstruments(from: IndexSet(integer: index), to: destination)
+        }
+    }
+}
+
+@MainActor
+struct SelectedInstrumentTargetControls: View {
+    let store: MonitorStore
+    let selectedInstrumentID: InstrumentID?
+
+    private let watchlistPresentation: WatchlistPresentationSession
+    private let quotePresentation: QuotePresentationSession
+    private let alertPresentation: AlertPresentationSession
+
+    @Environment(\.designPalette) private var palette
+
+    init(store: MonitorStore, selectedInstrumentID: InstrumentID?) {
+        self.store = store
+        self.selectedInstrumentID = selectedInstrumentID
+        self.watchlistPresentation = store.watchlistPresentation
+        self.quotePresentation = store.quotePresentation
+        self.alertPresentation = store.alertPresentation
+    }
+
+    var body: some View {
+        if let instrument = watchlistPresentation.instruments.first(where: {
+            $0.id == selectedInstrumentID
+        }) {
+            targetPriceControls(instrument)
+        } else {
+            Text("选择一个标的后设置目标价格。")
+                .font(DesignTypography.metadata)
+                .foregroundStyle(palette.textSecondary)
+        }
     }
 
     private func targetPriceControls(_ instrument: Instrument) -> some View {
@@ -163,21 +243,29 @@ struct SelectedInstrumentInspectorSection: View {
             ) != nil
 
         return VStack(alignment: .leading, spacing: DesignMetrics.space8) {
-            Toggle(
-                "目标价格",
-                isOn: Binding(
-                    get: { targets.isEnabled },
-                    set: { isEnabled in
-                        guard !isEnabled || hasLivePrice else { return }
-                        store.setPriceTargetsEnabled(for: instrument, enabled: isEnabled)
-                    }
+            HStack {
+                Text("\(instrument.name) 的目标")
+                    .font(DesignTypography.metadata)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: DesignMetrics.space8)
+                Toggle(
+                    "为 \(instrument.name) 启用目标价格",
+                    isOn: Binding(
+                        get: { targets.isEnabled },
+                        set: { isEnabled in
+                            guard !isEnabled || hasLivePrice else { return }
+                            store.setPriceTargetsEnabled(for: instrument, enabled: isEnabled)
+                        }
+                    )
                 )
-            )
-            .toggleStyle(.switch)
-            .disabled(!hasLivePrice && !targets.isEnabled)
-            .accessibilityHint(
-                hasLivePrice ? "开启后设置上涨和下跌目标" : "等待实时价格后才能开启"
-            )
+                .labelsHidden()
+                .toggleStyle(ToolSwitchStyle(showsLabel: false))
+                .controlSize(.small)
+                .disabled(!hasLivePrice && !targets.isEnabled)
+                .accessibilityHint(
+                    hasLivePrice ? "开启后设置上涨和下跌目标" : "等待实时价格后才能开启"
+                )
+            }
 
             if targets.isEnabled {
                 targetPriceField(
@@ -192,8 +280,8 @@ struct SelectedInstrumentInspectorSection: View {
                 )
             }
 
-            if alertPresentation.configuration.basis != .targetPrice {
-                Text("切换提醒依据为“目标价格”后生效。")
+            if !hasLivePrice && !targets.isEnabled {
+                Text("行情更新后可设置目标价格。")
                     .font(DesignTypography.metadata)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -217,9 +305,9 @@ struct SelectedInstrumentInspectorSection: View {
             TextField(
                 title,
                 value: priceBinding(for: instrument, isRising: isRising),
-                format: .number.precision(.fractionLength(2))
+                format: .number.precision(.fractionLength(2...3))
             )
-            .textFieldStyle(.roundedBorder)
+            .textFieldStyle(ToolTextFieldStyle())
             .multilineTextAlignment(.trailing)
             .monospacedDigit()
             .frame(width: 84)
@@ -249,17 +337,4 @@ struct SelectedInstrumentInspectorSection: View {
         )
     }
 
-    private func move(_ instrument: Instrument, direction: Int) {
-        guard
-            let index = watchlistPresentation.instruments.firstIndex(where: {
-                $0.id == instrument.id
-            })
-        else {
-            return
-        }
-        let destination = direction < 0 ? index - 1 : index + 2
-        Task {
-            await store.moveInstruments(from: IndexSet(integer: index), to: destination)
-        }
-    }
 }

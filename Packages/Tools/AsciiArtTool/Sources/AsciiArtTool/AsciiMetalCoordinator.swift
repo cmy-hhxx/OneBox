@@ -54,6 +54,9 @@ final class AsciiMetalCoordinator: NSObject, MTKViewDelegate {
                 reportReadiness(true)
                 requestStaticDrawIfNeeded(view: view, isAnimating: isAnimating)
             } catch {
+                if reportedReadiness != false {
+                    cache.diagnostics.record(error, operation: "Update Metal textures")
+                }
                 pauseDrawing(view: view)
                 reportReadiness(false)
             }
@@ -81,6 +84,7 @@ final class AsciiMetalCoordinator: NSObject, MTKViewDelegate {
             } catch is CancellationError {
                 return
             } catch {
+                cache.diagnostics.record(error, operation: "Prepare Metal renderer")
                 preparationFailed = self.pipeline == nil
                 pauseDrawing(view: view)
                 reportReadiness(false)
@@ -133,6 +137,7 @@ final class AsciiMetalCoordinator: NSObject, MTKViewDelegate {
             commandBuffer.present(drawable)
             commandBuffer.commit()
         } catch {
+            cache.diagnostics.record(error, operation: "Draw Metal frame")
             drawingFailed = true
             pauseDrawing(view: view)
             reportReadiness(false)

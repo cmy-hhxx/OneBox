@@ -69,7 +69,8 @@ final class PodPinToolLifecycle {
         debugFixtureAudioURL: URL?,
         externalToolsDirectoryURL: URL?,
         applicationSupportDirectoryURL: URL? = nil,
-        allowsNetworkAccess: Bool = true
+        allowsNetworkAccess: Bool = true,
+        diagnostics: ToolDiagnostics = .disabled
     ) {
         let fileManager = platform.fileManager
         let fileManagerReference = PodPinFileManagerReference(fileManager)
@@ -123,11 +124,14 @@ final class PodPinToolLifecycle {
                 reference: fileManagerReference,
                 applicationSupportURL: applicationSupportDirectoryURL
             ),
-            playbackController: AudioPlaybackController(playerFactory: platform.makeAudioPlayer),
+            playbackController: AudioPlaybackController(
+                playerFactory: platform.makeAudioPlayer, diagnostics: diagnostics
+            ),
             nowPlayingController: NowPlayingController(
                 commandCenter: platform.remoteCommandCenter,
                 nowPlayingInfoCenter: platform.nowPlayingInfoCenter
-            )
+            ),
+            diagnostics: diagnostics
         )
     }
 }

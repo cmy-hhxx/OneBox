@@ -3,12 +3,17 @@
 工具以 `ToolRegistration` 静态进入组合根，不通过配置或磁盘扫描发现：
 
 ```swift
-ToolRegistration(id: id, displayName: name) {
+ToolRegistration(
+    id: id,
+    displayName: name,
+    systemImage: "headphones",
+    summary: "收藏、整理与收听音频"
+) {
     ToolScene()
 }
 ```
 
-注册值包含 ID、展示名称、SwiftUI 内容构造方式和默认 no-op 的应用退出清理方式。无依赖工具可以公开静态 registration；需要平台能力或配置时，公开窄 `makeRegistration(...)` factory，并在工具内部组装状态和实现。注册过程不得执行业务 I/O、安装监听器或提前创建昂贵资源；退出 hook 只由 App 在确认退出时调用。
+注册值包含 ID、展示名称、SF Symbol 名称 `systemImage`、简短用途 `summary`、SwiftUI 内容构造方式和默认 no-op 的应用退出清理方式。宿主在侧栏显示图标与名称，在内容区显示名称与非空用途；注册过程只提供静态元数据。`systemImage` 默认 `square.grid.2x2`、`summary` 默认空串，当前三个工具均显式提供。无依赖工具可以公开静态 registration；需要平台能力或配置时，公开窄 `makeRegistration(...)` factory，并在工具内部组装状态和实现。注册过程不得执行业务 I/O、安装监听器或提前创建昂贵资源；退出 hook 只由 App 在确认退出时调用。
 
 股票看盘使用 `StockWatchModule.makeRegistration(platform:)`。工具定义的 `@MainActor StockWatchPlatformClient` 只有 `copyText(_:)`、`revealDirectory(_:)`、`playAlertSound(at:)` 和 `stopAlertSound()`；工具从自己的 package bundle 解析提醒声音 URL，App 的 `MacStockWatchPlatformClient` 只提供唯一 AppKit 播放 adapter。网络、数据库和领域状态不放进 platform 接口，也不由 Host 管理。其可见内容离屏时排空持久化并关库；应用在内容仍可见时退出，则由 registration hook 请求同一个幂等 shutdown。只有媒体 session 可以在离屏后继续用户已明确启动的播放或下载。
 
@@ -25,9 +30,18 @@ ToolRegistration(id: id, displayName: name) {
 
 优先使用 SwiftUI 的 scene、view 和 task 生命周期，不增加通用激活层。需要启动后台任务时，必须同时定义宿主调度、生命周期测试和对应 ADR。
 
+## 诊断
+
+- 三个工具的 registration factory 接受 Runtime 定义的 `ToolDiagnostics`，默认 `.disabled`。组合根绑定模块身份并注入；工具不依赖 Host 的存储或日志界面。
+- 在捕获原始错误、尚未转换为用户提示的边界调用 `record(_:operation:)`。操作名描述失败步骤，不拼接用户内容；已有原始校验诊断可使用 `record(message:operation:)`。
+- Error 事件保留 domain/code、原有描述和最深层 underlying error；取消任务、取消网络请求和用户取消不作为错误上报。Host 在进入内存记录前统一移除敏感路径、查询和授权字段。
+- 工具可通过 SwiftUI environment 中的 `openToolDiagnostics` 请求展开并筛选当前模块的日志；默认 action 为 no-op。Host 在主窗口底部呈现可调整高度的日志区域，App 提供复制能力和快捷键。日志的展开、收起和高度调整不替换工具内容，不改变其可见生命周期。
+
+容量、持久化和内嵌界面所有权见 [ADR-0012](decisions/0012-add-opt-in-in-app-diagnostics.md)。
+
 ## UI
 
-宿主拥有可自由缩放的窗口和一级工具导航，工具拥有内容与领域操作。一级工具切换立即发生；工具内次级页面使用可逆的 trailing push/pop；辅助信息使用 DesignSystem 提供的原生 trailing inspector，任务型提交才使用 sheet。两者均遵守 [设计规范](design.md)。未实现工具只显示“待接入”，不得提供无行为的控件或示例数据。
+宿主拥有可自由缩放的窗口、一级工具导航和当前工具标题/用途，工具拥有内容、任务标题与领域操作。一级工具切换立即发生；工具内次级页面使用可逆的 trailing push/pop；辅助信息使用 DesignSystem 提供的原生 trailing inspector，任务型提交才使用 sheet。两者均遵守 [设计规范](design.md)。三个工具复用 BoardUI 原生适配的 DesignSystem；`ToolSlider` 等控件只接收 Binding 与交互回调，不持有数据库、provider 或播放 controller。工具不导入开发参考目录中的 React 组件，也不增加新的跨工具依赖。未实现工具只显示“待接入”，不得提供无行为的控件或示例数据。
 
 ## 新增工具
 

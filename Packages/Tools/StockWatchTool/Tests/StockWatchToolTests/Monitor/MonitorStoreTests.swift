@@ -1,11 +1,75 @@
 import Combine
 import Observation
+import OneBoxRuntime
 import XCTest
+import os
 
 @testable import StockWatchTool
 
 @MainActor
 final class MonitorStoreTests: XCTestCase {
+    func testWeekendQuoteDisplaysLastSessionWithoutValidationErrors() async throws {
+        let events = OSAllocatedUnfairLock<[DiagnosticEvent]>(initialState: [])
+        let database = try MarketDatabase.inMemory()
+        let instrument = Instrument.initialWatchlist[0]
+        try await database.replaceWatchlist(with: [instrument])
+        let formatter = ISO8601DateFormatter()
+        let quoteTime = try XCTUnwrap(formatter.date(from: "2026-09-11T06:59:00Z"))
+        let now = try XCTUnwrap(formatter.date(from: "2026-09-13T04:26:45Z"))
+        let quote = makeQuote(for: instrument, price: 210, at: quoteTime)
+        let coordinator = QuoteRefreshCoordinator(
+            client: StaticMarketDataClient(quote: quote),
+            database: database,
+            now: { _ in now },
+            diagnostics: ToolDiagnostics { event in events.withLock { $0.append(event) } }
+        )
+
+        for _ in 0..<2 {
+            let batch = await coordinator.refresh(instruments: [instrument], currentQuotes: [:])
+            XCTAssertEqual(batch.outcomes.count, 1)
+            guard case .previousSession(let received, nil) = batch.outcomes.first?.result else {
+                return XCTFail("Expected a successful previous-session quote")
+            }
+            XCTAssertEqual(received, quote)
+            let persisted = try await database.loadLatestQuotes(for: [instrument])
+            XCTAssertEqual(persisted[instrument.id], quote)
+        }
+
+        XCTAssertTrue(
+            events.withLock { $0 }.isEmpty, "Weekend quotes must not log validation errors")
+        try await database.close()
+    }
+
+    func testFutureQuoteDiagnosticIncludesSourceAndBothSessionDates() async throws {
+        let events = OSAllocatedUnfairLock<[DiagnosticEvent]>(initialState: [])
+        let database = try MarketDatabase.inMemory()
+        let instrument = Instrument.initialWatchlist[2]
+        try await database.replaceWatchlist(with: [instrument])
+        let time = ISO8601DateFormatter().date(from: "2026-08-06T16:00:00Z")!
+        let quote = makeQuote(for: instrument, price: 210, at: time)
+        let coordinator = QuoteRefreshCoordinator(
+            client: StaticMarketDataClient(quote: quote),
+            database: database,
+            now: { _ in time.addingTimeInterval(-86_400) },
+            diagnostics: ToolDiagnostics { event in events.withLock { $0.append(event) } }
+        )
+
+        let batch = await coordinator.refresh(instruments: [instrument], currentQuotes: [:])
+
+        guard case .rejected = batch.outcomes.first?.result else {
+            return XCTFail("Future quotes must be rejected")
+        }
+        let recorded = events.withLock { $0 }
+        XCTAssertEqual(recorded.count, 1)
+        XCTAssertEqual(recorded.first?.operation, "quote.validate")
+        XCTAssertTrue(recorded.first?.message.contains("source=tencent") == true)
+        XCTAssertTrue(recorded.first?.message.contains("received=2026-08-06") == true)
+        XCTAssertTrue(recorded.first?.message.contains("expected=2026-08-05") == true)
+        let persisted = try await database.loadLatestQuotes(for: [instrument])
+        XCTAssertTrue(persisted.isEmpty)
+        try await database.close()
+    }
+
     func testStartReturnsAfterLocalRestoreWithoutWaitingForInitialRefresh() async throws {
         let database = try MarketDatabase.inMemory()
         let instrument = Instrument.initialWatchlist[2]
@@ -1212,51 +1276,72 @@ final class MonitorStoreTests: XCTestCase {
         await store.stop()
     }
 
-    func testPreviousSessionQuoteStaysStaleAndNeverTriggersAlertWithOrWithoutCache()
+    func testPreviousSessionQuoteDisplaysWithoutErrorsOrAlertsWithOrWithoutCache()
         async throws
     {
         let formatter = ISO8601DateFormatter()
-        let quoteTime = try XCTUnwrap(formatter.date(from: "2026-08-27T14:30:00Z"))
-        let now = try XCTUnwrap(formatter.date(from: "2026-08-28T14:30:00Z"))
-        let instrument = Instrument.initialWatchlist[2]
-        let quote = makeQuote(for: instrument, price: 210, at: quoteTime)
+        let scenarios: [(SymbolNamespace, String, String)] = [
+            (.shanghai, "2026-09-11T06:59:00Z", "2026-09-13T04:26:45Z"),
+            (.hongKong, "2026-09-11T07:59:00Z", "2026-09-13T04:26:45Z"),
+            (.unitedStates, "2026-09-11T19:59:00Z", "2026-09-13T16:30:00Z"),
+            (.shanghai, "2026-09-30T06:59:00Z", "2026-10-07T04:26:45Z"),
+            (.unitedStates, "2026-08-27T14:30:00Z", "2026-08-28T14:30:00Z"),
+        ]
 
-        for preloadsCache in [false, true] {
-            let database = try MarketDatabase.inMemory()
-            try await database.replaceWatchlist(with: [instrument])
-            if preloadsCache {
-                try await database.saveQuote(quote, for: instrument)
-            }
-            try await database.saveAlertSettings(
-                AlertSettingsSnapshot(
-                    configuration: AlertConfiguration(
-                        isEnabled: true,
-                        basis: .percentage,
-                        risingThreshold: 0.5,
-                        fallingThreshold: 0.5
-                    ),
-                    priceTargets: [:]
+        for (namespace, quoteTimestamp, refreshTimestamp) in scenarios {
+            let instrument = try XCTUnwrap(
+                Instrument.initialWatchlist.first { $0.namespace == namespace }
+            )
+            let quoteTime = try XCTUnwrap(formatter.date(from: quoteTimestamp))
+            let now = try XCTUnwrap(formatter.date(from: refreshTimestamp))
+            let quote = makeQuote(for: instrument, price: 210, at: quoteTime)
+            let sessionDate = TradingCalendar.sessionDate(for: quoteTime, market: instrument.market)
+            for preloadsCache in [false, true] {
+                let events = OSAllocatedUnfairLock<[DiagnosticEvent]>(initialState: [])
+                let database = try MarketDatabase.inMemory()
+                try await database.replaceWatchlist(with: [instrument])
+                if preloadsCache {
+                    try await database.saveQuote(quote, for: instrument)
+                }
+                try await database.saveAlertSettings(
+                    AlertSettingsSnapshot(
+                        configuration: AlertConfiguration(
+                            isEnabled: true,
+                            basis: .percentage,
+                            risingThreshold: 0.5,
+                            fallingThreshold: 0.5
+                        ),
+                        priceTargets: [:]
+                    )
                 )
-            )
-            let store = MonitorStore(
-                client: StaticMarketDataClient(quote: quote),
-                database: database,
-                preferences: makePreferences(),
-                refreshNow: { _ in now }
-            )
+                let store = MonitorStore(
+                    client: StaticMarketDataClient(quote: quote),
+                    database: database,
+                    preferences: makePreferences(),
+                    refreshNow: { _ in now },
+                    diagnostics: ToolDiagnostics { event in events.withLock { $0.append(event) } }
+                )
 
-            try await store.start()
-            await store.refreshAll()
+                try await store.start()
+                await store.refreshAll()
 
-            let monitored = try XCTUnwrap(store.monitoredInstrument(for: instrument.id))
-            XCTAssertEqual(monitored.quote, quote)
-            XCTAssertEqual(monitored.status, .stale)
-            XCTAssertEqual(monitored.statusMessage, "行情源返回了非当前交易日数据")
-            XCTAssertNil(store.activeAlert)
-            XCTAssertEqual(store.pendingAlertCountForTesting, 0)
-            let persisted = try await database.loadLatestQuotes(for: [instrument])
-            XCTAssertEqual(persisted[instrument.id], quote)
-            await store.stop()
+                let monitored = try XCTUnwrap(store.monitoredInstrument(for: instrument.id))
+                XCTAssertEqual(monitored.quote, quote)
+                XCTAssertEqual(monitored.chart?.points.count, quote.minuteBars.count)
+                XCTAssertEqual(monitored.status, .previousSession)
+                XCTAssertEqual(monitored.statusMessage, "最近行情 · \(sessionDate)")
+                XCTAssertNil(store.sourceError)
+                XCTAssertTrue(events.withLock { $0 }.isEmpty)
+                XCTAssertNil(store.activeAlert)
+                XCTAssertEqual(store.pendingAlertCountForTesting, 0)
+                XCTAssertFalse(store.setPriceTargetsEnabled(for: instrument, enabled: true))
+                let generatedCount = await store.generatePriceTargetsFromCurrentQuotes()
+                XCTAssertEqual(generatedCount, 0)
+                XCTAssertTrue(store.priceAlertTargets.isEmpty)
+                let persisted = try await database.loadLatestQuotes(for: [instrument])
+                XCTAssertEqual(persisted[instrument.id], quote)
+                await store.stop()
+            }
         }
     }
 

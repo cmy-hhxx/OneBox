@@ -12,21 +12,35 @@ struct ToolDetailView: View {
     var body: some View {
         Group {
             if let registration {
-                registration.content()
-                    .environment(
-                        \.toolContentReadinessReporter,
-                        ToolContentReadinessReporter {
-                            onContentReady(registration.id)
+                VStack(alignment: .leading, spacing: DesignMetrics.space16) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.space4) {
+                        Text(registration.displayName)
+                            .font(DesignTypography.pageTitle)
+                            .foregroundStyle(palette.textPrimary)
+                            .accessibilityAddTraits(.isHeader)
+                        if !registration.summary.isEmpty {
+                            Text(registration.summary)
+                                .font(DesignTypography.metadata)
+                                .foregroundStyle(palette.textSecondary)
                         }
-                    )
-                    .frame(
-                        maxWidth: .infinity,
-                        maxHeight: .infinity,
-                        alignment: .topLeading
-                    )
-                    .onAppear {
-                        onContentPresented(registration.id)
                     }
+                    .padding(.top, DesignMetrics.space8)
+                    registration.content()
+                        .environment(
+                            \.toolContentReadinessReporter,
+                            ToolContentReadinessReporter {
+                                onContentReady(registration.id)
+                            }
+                        )
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: .infinity,
+                            alignment: .topLeading
+                        )
+                        .onAppear {
+                            onContentPresented(registration.id)
+                        }
+                }
             }
         }
         .padding(.horizontal, DesignMetrics.mainInset)

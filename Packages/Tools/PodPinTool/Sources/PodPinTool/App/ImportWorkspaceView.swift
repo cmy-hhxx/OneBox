@@ -27,6 +27,8 @@ struct ImportWorkspaceView: View {
     @State private var probeTask: Task<Void, Never>?
     @State private var selectedBrowserProfileID: String?
     @State private var probeGeneration = 0
+    @State private var isLinkHovered = false
+    @FocusState private var isLinkFocused: Bool
     @AccessibilityFocusState private var isDestinationPickerFocused: Bool
 
     private var reduceMotion: Bool {
@@ -82,18 +84,19 @@ struct ImportWorkspaceView: View {
 
     private var importWorkspace: some View {
         WorkspacePage {
-            VStack(alignment: .leading, spacing: DesignMetrics.space16) {
+            VStack(alignment: .leading, spacing: DesignMetrics.space24) {
                 VStack(alignment: .leading, spacing: DesignMetrics.space8) {
                     HStack {
-                        Text("分享内容或公开链接")
-                            .font(DesignTypography.sectionTitle)
+                        Text("从链接收藏声音")
+                            .font(DesignTypography.metric)
                             .foregroundStyle(palette.textPrimary)
 
                         Spacer(minLength: DesignMetrics.space8)
 
-                        Button("粘贴") {
+                        Button("粘贴", systemImage: "doc.on.clipboard") {
                             pasteFromClipboard()
                         }
+                        .buttonStyle(ToolActionButtonStyle(kind: .secondary, compact: true))
                         .disabled(isImporting)
                         .accessibilityIdentifier("import.paste")
                     }
@@ -104,31 +107,50 @@ struct ImportWorkspaceView: View {
 
                     ZStack(alignment: .topLeading) {
                         TextEditor(text: $shareText)
+                            .focused($isLinkFocused)
                             .accessibilityIdentifier("import.link-input")
                             .font(DesignTypography.body)
                             .foregroundStyle(palette.textPrimary)
                             .scrollContentBackground(.hidden)
                             .padding(DesignMetrics.space8)
-                            .frame(minHeight: 88)
+                            .frame(minHeight: 112)
                             .disabled(isImporting)
                             .onChange(of: shareText) { _, _ in
                                 resetForLinkChange()
                             }
 
                         if shareText.isEmpty {
-                            Text("粘贴公开链接")
+                            Text("粘贴链接或分享文字…")
                                 .font(DesignTypography.body)
-                                .foregroundStyle(palette.textSecondary)
-                                .padding(DesignMetrics.space16)
+                                .foregroundStyle(
+                                    isImporting
+                                        ? palette.textDisabled
+                                        : (isLinkFocused
+                                            ? palette.textPrimary : palette.textSecondary)
+                                )
+                                .padding(.horizontal, DesignMetrics.space12)
+                                .padding(.vertical, DesignMetrics.space8)
                                 .allowsHitTesting(false)
+                                .accessibilityHidden(true)
                         }
                     }
-                    .background(palette.surface)
-                    .clipShape(.rect(cornerRadius: DesignMetrics.cornerRadius))
+                    // BoardUI Textarea keeps a tertiary surface and draws state inside the field.
+                    .background(palette.border)
+                    .clipShape(.rect(cornerRadius: 10))
                     .overlay {
-                        RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius)
-                            .strokeBorder(palette.border, lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 10)
+                            .strokeBorder(
+                                isImporting
+                                    ? .clear
+                                    : (isLinkFocused
+                                        ? palette.borderActive
+                                        : (isLinkHovered ? palette.borderHover : .clear)),
+                                lineWidth: 2
+                            )
                     }
+                    .onHover { isLinkHovered = $0 }
+                    .animation(reduceMotion ? nil : DesignMotion.hover, value: isLinkFocused)
+                    .animation(reduceMotion ? nil : DesignMotion.hover, value: isLinkHovered)
                 }
 
                 if let preview {
@@ -142,6 +164,9 @@ struct ImportWorkspaceView: View {
                 importFeedback
                 actionBar
             }
+            .frame(maxWidth: 680, alignment: .leading)
+            .padding(DesignMetrics.space24)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
     }
 
@@ -360,20 +385,21 @@ struct ImportWorkspaceView: View {
 
             if preview == nil, importSession.issue != nil {
                 Button("重试") { beginProbe() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(ToolActionButtonStyle(kind: .primary))
                     .disabled(!candidates.hasExactlyOneSupportedURL || isProbing)
                     .accessibilityIdentifier("import.retry")
             } else {
                 Button(primaryImportTitle) {
                     beginImport(as: .stream)
                 }
+                .buttonStyle(ToolActionButtonStyle(kind: .secondary))
                 .disabled(isImporting || selectedContentIDs.isEmpty)
                 .accessibilityIdentifier("import.add-and-play")
 
                 Button("下载到本机") {
                     beginImport(as: .download)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(ToolActionButtonStyle(kind: .primary))
                 .disabled(isImporting || selectedContentIDs.isEmpty)
                 .accessibilityIdentifier("import.download-and-save")
             }
@@ -397,7 +423,7 @@ struct ImportWorkspaceView: View {
         .foregroundStyle(palette.negative)
         .padding(DesignMetrics.space12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.surfaceElevated)
+        .background(palette.negativeSurface)
         .clipShape(.rect(cornerRadius: DesignMetrics.cornerRadius))
         .accessibilityElement(children: .combine)
     }
@@ -420,7 +446,7 @@ struct ImportWorkspaceView: View {
                     Button("查找浏览器 Profile") {
                         store.discoverBrowserProfiles()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(ToolActionButtonStyle(kind: .secondary))
                     .help("明确允许 PodPin 读取本机浏览器 Profile 名称")
                 } else if importSession.isDiscoveringBrowserProfiles {
                     HStack(spacing: DesignMetrics.space8) {
@@ -438,7 +464,7 @@ struct ImportWorkspaceView: View {
                         Button("重新查找") {
                             store.discoverBrowserProfiles()
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(ToolActionButtonStyle(kind: .secondary))
                     }
                 } else {
                     Picker("浏览器 Profile", selection: $selectedBrowserProfileID) {
@@ -467,7 +493,7 @@ struct ImportWorkspaceView: View {
                 Button("使用所选 Profile 重试") {
                     retryAfterBrowserAccess()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(ToolActionButtonStyle(kind: .primary))
                 .disabled(isProbing || selectedBrowserProfileID == nil)
             }
         }
@@ -495,7 +521,7 @@ struct ImportWorkspaceView: View {
             }
             .font(DesignTypography.body)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(ToolActionButtonStyle(kind: .secondary))
         .accessibilityFocused($isDestinationPickerFocused)
         .popover(isPresented: $isDestinationPickerPresented, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: DesignMetrics.space8) {

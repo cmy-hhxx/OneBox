@@ -222,7 +222,7 @@ enum ContentImportError: LocalizedError, Equatable, Sendable {
         case .restrictedContent(let reason):
             return reason
         case .toolUnavailable(let name):
-            return "未找到内置 \(name)，请重新安装 PodPin。"
+            return "当前应用缺少内置 \(name)，请安装包含下载组件的完整版本。"
         case .malformedToolOutput:
             return "内容解析结果不完整，无法导入。"
         case .malformedResponse:
@@ -242,5 +242,35 @@ enum ContentImportError: LocalizedError, Equatable, Sendable {
         case .browserAccessFailed(let message), .platformUnavailable(let message):
             return message
         }
+    }
+}
+
+/// Retains a raw transport/parser/process failure until the store reports it.
+/// UI classification stays independent from the diagnostic error chain.
+struct ContentImportFailure: Error, LocalizedError, CustomNSError {
+    let underlying: any Error
+    let presentation: ContentImportError
+
+    var errorDescription: String? { presentation.localizedDescription }
+    static var errorDomain: String { "PodPin.ContentImport" }
+    var errorCode: Int { 1 }
+    var errorUserInfo: [String: Any] {
+        [
+            NSLocalizedDescriptionKey: presentation.localizedDescription,
+            NSUnderlyingErrorKey: underlying as NSError,
+        ]
+    }
+
+    static func toolFailure(
+        _ result: ExternalToolResult, tool: String, presentation: ContentImportError
+    ) -> ContentImportFailure {
+        ContentImportFailure(
+            underlying: NSError(
+                domain: "PodPin.ExternalTool.\(tool)",
+                code: Int(result.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: result.standardError]
+            ),
+            presentation: presentation
+        )
     }
 }

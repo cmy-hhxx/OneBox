@@ -7,9 +7,9 @@ OneBox 是静态注册的模块化单体，见 [ADR-0001](decisions/0001-use-sta
 | Module | Package 或源目录 | 职责 | 依赖 |
 | --- | --- | --- | --- |
 | `OneBox` | `OneBox/App` | 应用生命周期、窗口、组合根和生产 adapter；打包许可证、Debug fixture 与外部工具 | Host、Runtime、DesignSystem、全部 Tool |
-| `OneBoxHost` | `Packages/OneBoxCore/Sources/OneBoxHost` | 侧边栏、选择和内容区域 | Runtime、DesignSystem |
-| `OneBoxRuntime` | `Packages/OneBoxCore/Sources/OneBoxRuntime` | 工具 ID、注册值、目录和应用退出 hook | 无 |
-| `OneBoxDesignSystem` | `Packages/OneBoxCore/Sources/OneBoxDesignSystem` | 颜色、字体和几何 | 无 |
+| `OneBoxHost` | `Packages/OneBoxCore/Sources/OneBoxHost` | 侧边栏、选择、内容区域和内存调试日志界面 | Runtime、DesignSystem |
+| `OneBoxRuntime` | `Packages/OneBoxCore/Sources/OneBoxRuntime` | 工具 ID、注册值、目录、应用退出 hook 和窄诊断接口 | 无 |
+| `OneBoxDesignSystem` | `Packages/OneBoxCore/Sources/OneBoxDesignSystem` | BoardUI 语义色、字体资源、几何、动效和共享 SwiftUI 控件 | 无 |
 | `AsciiArtTool` | `Packages/Tools/AsciiArtTool` | ASCII 会话、渲染、资源、导出和 package tests | Runtime、DesignSystem |
 | `StockWatchTool` | `Packages/Tools/StockWatchTool` | 行情、自选、提醒、声音资源、缓存、迁移和 package tests | Runtime、DesignSystem、GRDB 7.11.1 |
 | `PodPinTool` | `Packages/Tools/PodPinTool` | 音频导入、资料库、下载、队列、播放和 package tests | Runtime、DesignSystem、GRDB 7.11.1 |
@@ -17,6 +17,14 @@ OneBox 是静态注册的模块化单体，见 [ADR-0001](decisions/0001-use-sta
 Runtime 与 Tool module 默认 `nonisolated`；DesignSystem、Host、SwiftUI 入口和可观察状态归 `MainActor`，网络与数据库工作不阻塞主 actor。GRDB 由 Swift Package Manager 精确固定到 7.11.1。移除它需要重写两个工具各自的数据库边界、迁移和并发验证。
 
 每个 `Package.swift` 定义 package 内依赖、资源和编译设置；`project.yml` 只定义最终 App 组装、签名、发行资源和 App-hosted tests。当前边界见 [ADR-0010](decisions/0010-require-package-per-tool-isolation.md) 和 [ADR-0004](decisions/0004-keep-app-specific-platform-code-in-app.md)；原 Xcode-target 决定 [ADR-0003](decisions/0003-enforce-module-dependencies-with-targets.md) 已被取代。
+
+## 设计资源与原生实现
+
+BoardUI 的免费组件通过官方 MCP 在忽略目录 `.build/BoardUIReference/` 初始化并安装，形成可检查的主题、字体、组件与 CSS 动效参考。该目录只用于开发比对；最终 App 的 UI 仍由 SwiftUI 和必要的 AppKit/Metal 组成，不加载 React、Tailwind、Node 或远程 UI 代码。当前映射与来源见 [BoardUI 原生适配](boardui-native.md)。
+
+`OneBoxDesignSystem` 打包 Inter 4.1 variable 字体，通过 CoreText 在当前进程中注册一次；中文使用系统字体回退。字体没有安装到用户或系统目录。App 发行资源包含 BoardUI 的 MIT 与 Inter 的 SIL OFL 许可；资源所有权继续遵守各 `Package.swift` 与 `project.yml`。
+
+共享控件通过 Binding、值类型和交互回调服务当前三个工具；颜色与动效替换不改变静态 registration、依赖注入、数据归属、工具生命周期或日志入口。宿主在 260/212pt 展开侧栏与 60pt 图标栏之间切换；PodPin 继续拥有自己的可逆导航栈，原生 inspector 继续推挤内容。
 
 ## 边界
 
@@ -45,6 +53,14 @@ PodPin 通过 `PodPinModule.makeRegistration(platform:debugFixtureAudioURL:exter
 该生命周期没有宿主启动后台激活、菜单栏 worker 或常驻调度。窗口只被其他窗口遮挡或失去焦点不会让 SwiftUI 内容离屏；当前生命周期不把这种状态当作停机信号。
 
 PodPin 首次被选择时才创建 session 内容并打开旧命名空间数据库。切换工具后，用户已明确开始的播放和下载仍由 session 持有；应用退出 hook 在同一 15 秒期限内请求取消并等待导入、下载和解析，flush 播放与资料库状态，停止媒体命令并关闭数据库；无法合作取消的 framework 工作不会无限阻塞应用退出。shutdown 幂等且支持有界取消。
+
+## 应用内诊断
+
+[ADR-0012](decisions/0012-add-opt-in-in-app-diagnostics.md) 在现有 Runtime 中定义 `ToolDiagnostics` 和 `DiagnosticEvent`。组合根为三个工具分别注入绑定模块 ID 和名称的 sink；工具在错误被转换为展示文案前上报，不导入 Host、不读取全局日志容器。默认 sink 为 no-op。
+
+Host 的 `DebugLogStore` 只在调试模式开启时接收事件，先脱敏再交给主 actor，按发生时间保留最近 500 条。`DebugLogView` 提供模块筛选、时间和文本搜索、原始详情及复制；清空或切换采集状态会使尚未入库的旧会话事件失效。
+
+Host 在主窗口工作区的 `VSplitView` 底部呈现 `DebugLogView`，用户可拖动分隔线调整高度；App 负责剪贴板写入、`⇧⌘L` 命令和 `onebox.debugMode` 偏好。侧栏入口切换日志的展开状态，展开时选中当前工具；`⇧⌘L` 切换时保留已有筛选。工具内 `OpenToolDiagnosticsAction` 始终展开日志并选中当前模块。关闭按钮只收起底部区域，主内容始终保留稳定身份和可操作区域，不触发工具切换或后台激活。仅调试开关持久化，事件不落盘、不上传；`--debug-mode` 可在本次启动直接开启采集。
 
 ## 数据与网络
 
@@ -80,6 +96,6 @@ PodPin 继续使用 `~/Library/Application Support/PodPin/` 和原 PodPin 偏好
 - ASCII 工坊在注册时创建默认静态的内存会话和惰性渲染缓存，不请求设备或执行 I/O。用户显式选择动画并播放后才持续绘制；工具隐藏、场景失活、窗口最小化、窗口完全遮挡或用户暂停时停止，关闭视图时取消导入和导出。
 - 股票看盘已接入既有 registration；只在可见期间打开本地库和公开行情源，不请求系统通知权限，也不执行后台监控。
 - PodPin 首次被选择时才开库并安装系统媒体命令；离屏后已开始的播放和下载可以继续，应用退出会等待其 flush 和清理。
-- 性能区间统一使用 `com.cmy.OneBox` subsystem，并按 Host、ASCII、StockWatch、PodPin category 区分；PodPin 的事件日志保持脱敏。日志只记录固定区间和分类状态，不记录用户内容、完整查询或绝对用户路径。
+- 性能区间统一使用 `com.cmy.OneBox` subsystem，并按 Host、ASCII、StockWatch、PodPin category 区分，只记录固定区间和分类状态。应用内调试日志另由显式开关控制，记录脱敏的底层错误，不恢复 PodPin 旧 JSONL 事件流。
 
 工具接入规则见 [工具模块契约](module-contract.md)；当前事实仍以源码、测试、各 `Package.swift` 和 `project.yml` 为准。

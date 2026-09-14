@@ -29,7 +29,7 @@ struct AsciiArtView: View {
     @AccessibilityFocusState private var isParameterButtonAccessibilityFocused: Bool
 
     var body: some View {
-        VStack(spacing: DesignMetrics.space8) {
+        VStack(spacing: DesignMetrics.space16) {
             AsciiToolbar(
                 session: session,
                 isExporting: isExporting,
@@ -132,6 +132,7 @@ struct AsciiArtView: View {
             }
         case .failure(let error):
             if (error as? CocoaError)?.code != .userCancelled {
+                session.diagnostics.record(error, operation: "Open image file")
                 session.report(.decodeFailed)
             }
         }
@@ -166,6 +167,7 @@ struct AsciiArtView: View {
                 isExporting = false
             } catch {
                 isExporting = false
+                session.diagnostics.record(error, operation: "Render PNG")
                 session.report(.exportFailed)
             }
             exportTask = nil
@@ -176,6 +178,7 @@ struct AsciiArtView: View {
         if case .failure(let error) = result,
             (error as? CocoaError)?.code != .userCancelled
         {
+            session.diagnostics.record(error, operation: "Save PNG")
             session.report(.exportFailed)
         }
     }

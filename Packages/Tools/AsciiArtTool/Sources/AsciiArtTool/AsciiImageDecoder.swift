@@ -51,7 +51,7 @@ nonisolated enum AsciiImageDecoder {
         } catch let error as AsciiToolError {
             throw error
         } catch {
-            throw AsciiToolError.decodeFailed
+            throw error
         }
     }
 

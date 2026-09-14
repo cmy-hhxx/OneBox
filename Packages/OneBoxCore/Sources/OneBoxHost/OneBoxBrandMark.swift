@@ -6,7 +6,13 @@ struct OneBoxBrandMark: View {
 
     var body: some View {
         Canvas { context, size in
-            let scale = min(size.width, size.height) / 24
+            // Fit the complete authored bounds inside the slot with a 1pt inset.
+            let artworkSide = min(size.width, size.height) - 2
+            let scale = artworkSide / 23.5
+            context.translateBy(
+                x: (size.width - artworkSide) / 2 - 2 * scale,
+                y: (size.height - artworkSide) / 2 - 2.5 * scale
+            )
             let outer = CGRect(
                 x: 2 * scale,
                 y: 2.5 * scale,

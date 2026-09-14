@@ -23,6 +23,12 @@ final class StockWatchAccessibilityPresentationTests: XCTestCase {
         )
     }
 
+    func testLowPricedQuotesRetainTheThirdDecimalInListAndInspector() {
+        XCTAssertEqual(InstrumentRowPresentation.priceText(0.538), "0.538")
+        XCTAssertEqual(InstrumentRowPresentation.priceText(9.125), "9.125")
+        XCTAssertEqual(InstrumentRowPresentation.priceText(128.75), "128.75")
+    }
+
     func testFlatPercentOmitsPositiveSign() {
         XCTAssertEqual(InstrumentRowPresentation.percentText(0), "0.00%")
         XCTAssertEqual(InstrumentRowPresentation.percentText(1.25), "+1.25%")
@@ -51,6 +57,64 @@ final class StockWatchAccessibilityPresentationTests: XCTestCase {
 
         XCTAssertTrue(summary.contains(instrument.symbol))
         XCTAssertTrue(summary.contains(instrument.namespace.displayName))
+    }
+
+    func testPreviousSessionRowPresentsItsQuoteDateVisuallyAndAccessibly() throws {
+        let instrument = Instrument.initialWatchlist[0]
+        let time = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-09-11T07:00:00Z"))
+        let quote = QuoteSnapshot(
+            instrumentID: instrument.id,
+            minuteBars: [MinuteBar(time: time, open: 105, close: 105, high: 105, low: 105)],
+            dayOpen: 100,
+            previousClose: 100,
+            lastPrice: 105,
+            marketTime: time,
+            receivedAt: time,
+            source: .tencent
+        )
+        let message = "最近行情 · 2026-09-11"
+
+        XCTAssertEqual(
+            InstrumentRowPresentation.statusText(
+                status: .previousSession,
+                hasQuote: true,
+                statusMessage: message
+            ),
+            message
+        )
+        XCTAssertEqual(
+            InstrumentRowPresentation.statusText(
+                status: .previousSession,
+                hasQuote: true,
+                statusMessage: nil
+            ),
+            "最近交易日行情"
+        )
+        let summary = InstrumentRowPresentation.accessibilitySummary(
+            instrument: instrument,
+            quote: quote,
+            status: .previousSession,
+            statusMessage: message
+        )
+        XCTAssertTrue(summary.contains(message))
+        XCTAssertTrue(summary.contains("105.00"))
+        XCTAssertTrue(summary.contains("上涨 +5.00%"))
+    }
+
+    func testPreviousSessionInspectorNamesThePriceWithoutPresentingItAsCurrent() {
+        XCTAssertEqual(
+            SelectedInstrumentQuotePresentation.priceLabel(
+                status: .previousSession,
+                lastPrice: 105
+            ),
+            "最近交易日价格"
+        )
+        XCTAssertNil(
+            SelectedInstrumentQuotePresentation.livePrice(
+                status: .previousSession,
+                lastPrice: 105
+            )
+        )
     }
 
     func testThresholdAccessibilityValueUsesPercentFormat() {

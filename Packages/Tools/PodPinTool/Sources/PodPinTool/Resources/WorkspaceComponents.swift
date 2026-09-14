@@ -17,7 +17,7 @@ struct WorkspacePage<Content: View>: View {
                 .padding(.vertical, DesignMetrics.space8)
         }
         .scrollIndicators(.automatic)
-        .background(palette.background)
+        .background(palette.surface)
     }
 }
 

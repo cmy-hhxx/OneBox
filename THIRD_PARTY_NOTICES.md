@@ -85,3 +85,41 @@ lock-derived sources, licenses, and build provenance under `ThirdPartyNotices/To
 These mechanical checks are not a legal conclusion. A distributor remains
 responsible for the obligations of the actual signed build, including applicable
 LGPL relinking and source requirements.
+
+## BoardUI
+
+OneBox's current SwiftUI design system adapts the official free [BoardUI](https://www.boardui.com)
+component sources, semantic theme and motion. The source reference was installed
+through BoardUI's MCP with CLI 0.5.5 and skill 2026.9.11. Its React/Tailwind project
+is a development reference; OneBox ships native SwiftUI controls.
+
+Copyright (c) 2026 Mertcan Dundar Esmergul (BoardUI).
+
+The complete [MIT License](Licenses/BoardUI-MIT.txt) is distributed in the application
+as `BoardUI-MIT.txt`. Component mappings and native adaptations are documented in
+[BoardUI native adaptation](docs/boardui-native.md).
+
+## Inter
+
+OneBox bundles [Inter](https://github.com/rsms/inter) 4.1 variable font as a
+`OneBoxDesignSystem` resource. It is registered only within the running process;
+Chinese glyphs use the platform font fallback.
+
+Copyright (c) 2016 The Inter Project Authors.
+
+The font is distributed under the [SIL Open Font License 1.1](Licenses/Inter-OFL.txt),
+packaged in the application as `Inter-OFL.txt`.
+
+## Earlier Uiverse UI references
+
+Earlier OneBox UI iterations adapted these MIT-licensed components from Uiverse.
+Their attribution is retained as design provenance; BoardUI is the current design
+source.
+
+- [Codecite: angry-bullfrog-58](https://uiverse.io/Codecite/angry-bullfrog-58) — primary button surface and press feedback.
+- [njesenberger: friendly-otter-40](https://uiverse.io/njesenberger/friendly-otter-40) — compact on/off switch treatment.
+- [alexruix: slippery-frog-10](https://uiverse.io/alexruix/slippery-frog-10) — inset field and focus treatment.
+- [Yaya12085: rude-mouse-79](https://uiverse.io/Yaya12085/rude-mouse-79) — inset white segmented selection.
+
+The authors' copyright notices and MIT permission text are included in
+`Licenses/Uiverse-MIT.txt`, distributed in the application as `Uiverse-MIT.txt`.

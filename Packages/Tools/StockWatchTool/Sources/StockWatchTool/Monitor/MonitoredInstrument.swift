@@ -4,6 +4,7 @@ enum MonitorStatus: Equatable, Sendable {
     case idle
     case loading
     case live
+    case previousSession
     case stale
 }
 

@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import OneBoxRuntime
 
 private struct LegacyDatabaseRequiresRecovery: LocalizedError, Sendable {
     var errorDescription: String? {
@@ -35,6 +36,7 @@ struct StockWatchStorage: Sendable {
     private static let databaseFileName = "marketsprite.sqlite"
     private static let backupPagesPerStep: CInt = 32
 
+    private let diagnostics: ToolDiagnostics
     let applicationSupportDirectory: URL?
     #if DEBUG || STOCKWATCH_BENCHMARK
         private let importStageObserverForTesting:
@@ -42,7 +44,8 @@ struct StockWatchStorage: Sendable {
         private let databaseOpenerForTesting: (@Sendable (URL) throws -> MarketDatabase)?
     #endif
 
-    init(fileManager: FileManager = .default) {
+    init(fileManager: FileManager = .default, diagnostics: ToolDiagnostics = .disabled) {
+        self.diagnostics = diagnostics
         applicationSupportDirectory =
             fileManager.urls(
                 for: .applicationSupportDirectory,
@@ -59,14 +62,17 @@ struct StockWatchStorage: Sendable {
             applicationSupportDirectory: URL,
             importStageObserverForTesting:
                 (@Sendable (StockWatchStorageImportStage) async -> Void)? = nil,
-            databaseOpenerForTesting: (@Sendable (URL) throws -> MarketDatabase)? = nil
+            databaseOpenerForTesting: (@Sendable (URL) throws -> MarketDatabase)? = nil,
+            diagnostics: ToolDiagnostics = .disabled
         ) {
+            self.diagnostics = diagnostics
             self.applicationSupportDirectory = applicationSupportDirectory
             self.importStageObserverForTesting = importStageObserverForTesting
             self.databaseOpenerForTesting = databaseOpenerForTesting
         }
     #else
-        init(applicationSupportDirectory: URL) {
+        init(applicationSupportDirectory: URL, diagnostics: ToolDiagnostics = .disabled) {
+            self.diagnostics = diagnostics
             self.applicationSupportDirectory = applicationSupportDirectory
         }
     #endif
@@ -130,6 +136,7 @@ struct StockWatchStorage: Sendable {
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
+                    diagnostics.record(error, operation: "storage.import-legacy")
                     throw StockWatchStorageError.legacyImportFailed(
                         path: legacyDatabaseURL.path,
                         reason: error.localizedDescription

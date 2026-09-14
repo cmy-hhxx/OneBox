@@ -1,6 +1,7 @@
 import AsciiArtTool
 import Foundation
 import OneBoxDesignSystem
+import OneBoxHost
 import OneBoxRuntime
 import PodPinTool
 import StockWatchTool
@@ -8,7 +9,8 @@ import StockWatchTool
 enum AppComposition {
     static func makeCatalog(
         arguments: [String] = ProcessInfo.processInfo.arguments,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        debugLogStore: DebugLogStore? = nil
     ) -> ToolCatalog {
         let uiTesting: UITestingConfiguration?
         do {
@@ -25,13 +27,19 @@ enum AppComposition {
         )
         return ToolCatalog(registrations: [
             AsciiArtModule.makeRegistration(
-                deviceProvider: SystemAsciiMetalDeviceProvider()
+                deviceProvider: SystemAsciiMetalDeviceProvider(),
+                diagnostics: debugLogStore?.diagnostics(
+                    for: ToolID(rawValue: "ascii-art"), name: "ASCII 工坊"
+                ) ?? .disabled
             ),
             StockWatchModule.makeRegistration(
                 platform: MacStockWatchPlatformClient(),
                 applicationSupportDirectoryURL: uiTesting?.applicationSupportDirectoryURL,
                 preferences: uiTesting?.stockWatchPreferences,
-                allowsNetworkAccess: uiTesting == nil
+                allowsNetworkAccess: uiTesting == nil,
+                diagnostics: debugLogStore?.diagnostics(
+                    for: ToolID(rawValue: "stock-watch"), name: "股票看盘"
+                ) ?? .disabled
             ),
             PodPinModule.makeRegistration(
                 platform: podPinPlatform,
@@ -41,7 +49,10 @@ enum AppComposition {
                     ? podPinPlatform.externalToolsDirectoryURL
                     : nil,
                 applicationSupportDirectoryURL: uiTesting?.applicationSupportDirectoryURL,
-                allowsNetworkAccess: uiTesting == nil
+                allowsNetworkAccess: uiTesting == nil,
+                diagnostics: debugLogStore?.diagnostics(
+                    for: ToolID(rawValue: "podpin"), name: "PodPin"
+                ) ?? .disabled
             ),
         ])
     }

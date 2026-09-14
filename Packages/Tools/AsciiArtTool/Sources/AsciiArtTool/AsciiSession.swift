@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import OneBoxRuntime
 
 @MainActor
 @Observable
@@ -26,7 +27,13 @@ final class AsciiSession {
     @ObservationIgnored private var importTask: Task<Void, Never>?
     @ObservationIgnored let asyncWorkOwner: AsciiAsyncWorkOwner
 
-    init(asyncWorkOwner: AsciiAsyncWorkOwner = AsciiAsyncWorkOwner()) {
+    let diagnostics: ToolDiagnostics
+
+    init(
+        asyncWorkOwner: AsciiAsyncWorkOwner = AsciiAsyncWorkOwner(),
+        diagnostics: ToolDiagnostics = .disabled
+    ) {
+        self.diagnostics = diagnostics
         self.asyncWorkOwner = asyncWorkOwner
     }
 
@@ -105,6 +112,7 @@ final class AsciiSession {
             source = AsciiSource(image: try OneBoxSourceImage.make())
             sourceRevision += 1
         } catch {
+            diagnostics.record(error, operation: "Prepare initial image")
             report(.decodeFailed)
         }
     }
@@ -134,17 +142,20 @@ final class AsciiSession {
             } catch is CancellationError {
                 guard let self, generation == self.importGeneration else { return }
                 isImporting = false
-            } catch is AsciiTimeoutError {
+            } catch let error as AsciiTimeoutError {
                 guard let self, generation == self.importGeneration else { return }
                 isImporting = false
+                diagnostics.record(error, operation: "Import image")
                 report(.importTimedOut)
             } catch let error as AsciiToolError {
                 guard let self, generation == self.importGeneration else { return }
                 isImporting = false
+                diagnostics.record(error, operation: "Import image")
                 report(error)
             } catch {
                 guard let self, generation == self.importGeneration else { return }
                 isImporting = false
+                diagnostics.record(error, operation: "Import image")
                 report(.decodeFailed)
             }
         }

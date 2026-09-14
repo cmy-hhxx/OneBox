@@ -86,7 +86,11 @@ actor MediaMaterializer: MediaMaterializing {
             )
             guard transcode.terminationStatus == 0,
                 fileManager.fileExists(atPath: converted.path)
-            else { throw ContentImportError.invalidDownloadedAudio }
+            else {
+                throw ContentImportFailure.toolFailure(
+                    transcode, tool: "ffmpeg", presentation: .invalidDownloadedAudio
+                )
+            }
         }
         guard fileManager.fileExists(atPath: converted.path) else {
             throw ContentImportError.invalidDownloadedAudio
@@ -115,8 +119,12 @@ actor MediaMaterializer: MediaMaterializing {
                 fileURL.path,
             ]
         )
-        guard result.terminationStatus == 0,
-            let data = result.standardOutput.data(using: .utf8),
+        guard result.terminationStatus == 0 else {
+            throw ContentImportFailure.toolFailure(
+                result, tool: "ffprobe", presentation: .invalidDownloadedAudio
+            )
+        }
+        guard let data = result.standardOutput.data(using: .utf8),
             let payload = try? JSONDecoder().decode(MediaProbePayload.self, from: data),
             payload.streams.contains(where: { $0.codecType == "audio" }),
             let durationString = payload.format?.duration,

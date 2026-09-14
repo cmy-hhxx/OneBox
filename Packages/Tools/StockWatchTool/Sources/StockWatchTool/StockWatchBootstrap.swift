@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import OSLog
+import OneBoxRuntime
 
 struct StockWatchShutdownFailure: Error, Equatable, Sendable {
     let databasePath: String
@@ -243,6 +244,7 @@ final class StockWatchBootstrap: ObservableObject {
 
     private let lifecycleCoordinator: StockWatchLifecycleCoordinator
     private let preferencesFactory: @MainActor () -> StockWatchPreferences
+    private let diagnostics: ToolDiagnostics
     private let client: any MarketDataClient
     private let alertSoundPlayer: any AlertSoundPlaying
     private let databasePath: String
@@ -261,7 +263,8 @@ final class StockWatchBootstrap: ObservableObject {
             StockWatchPreferences()
         },
         client: any MarketDataClient = PublicMarketDataClient(),
-        storage: StockWatchStorage = StockWatchStorage()
+        storage: StockWatchStorage = StockWatchStorage(),
+        diagnostics: ToolDiagnostics = .disabled
     ) {
         self.init(
             lifecycleCoordinator: lifecycleCoordinator,
@@ -270,7 +273,8 @@ final class StockWatchBootstrap: ObservableObject {
             alertSoundPlayer: AlertSoundPlayer(platform: platform),
             databasePath: storage.databasePath,
             databaseFactory: { try await storage.open() },
-            quoteCacheClear: { try await storage.clearQuoteCache() }
+            quoteCacheClear: { try await storage.clearQuoteCache() },
+            diagnostics: diagnostics
         )
     }
 
@@ -286,11 +290,13 @@ final class StockWatchBootstrap: ObservableObject {
         },
         quoteCacheClear: @escaping @Sendable () async throws -> Void = {
             throw CocoaError(.featureUnsupported)
-        }
+        },
+        diagnostics: ToolDiagnostics = .disabled
     ) {
         self.lifecycleCoordinator = lifecycleCoordinator
         self.preferencesFactory = preferencesFactory
         self.client = client
+        self.diagnostics = diagnostics
         self.alertSoundPlayer = alertSoundPlayer
         self.databasePath = databasePath
         self.databaseFactory = databaseFactory
@@ -392,7 +398,8 @@ final class StockWatchBootstrap: ObservableObject {
                 database: database,
                 preferences: preferences,
                 alertSoundPlayer: alertSoundPlayer,
-                databaseClose: databaseClose
+                databaseClose: databaseClose,
+                diagnostics: diagnostics
             )
             candidate = newStore
             try await newStore.start()
@@ -403,6 +410,9 @@ final class StockWatchBootstrap: ObservableObject {
             )
             didResolveContent = true
         } catch {
+            if !(error is StockWatchStartupError), !(error is StockWatchStorageError) {
+                diagnostics.record(error, operation: "storage.open")
+            }
             let cleanupFailure: StockWatchShutdownFailure?
             if let candidate {
                 cleanupFailure = await lifecycleCoordinator.finishMount(
@@ -489,6 +499,7 @@ final class StockWatchBootstrap: ObservableObject {
         } catch is CancellationError {
             return
         } catch {
+            diagnostics.record(error, operation: "storage.clear-cache")
             quoteCacheRecoveryMessage = tr("清空行情缓存失败")
         }
     }

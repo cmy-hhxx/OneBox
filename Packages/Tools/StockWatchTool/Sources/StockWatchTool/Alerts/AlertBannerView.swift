@@ -38,30 +38,30 @@ struct AlertBannerView: View {
     }
 
     var body: some View {
-        HStack(spacing: DesignMetrics.space12) {
+        HStack(alignment: .top, spacing: DesignMetrics.space12) {
             alertSummary
 
             Spacer(minLength: 0)
 
             Button("关闭提醒", systemImage: "xmark", action: dismiss)
                 .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
-                .frame(width: DesignMetrics.space24, height: DesignMetrics.space24)
+                .buttonStyle(ToolCloseButtonStyle())
                 .focused($focusedElement, equals: .descendantControl)
                 .accessibilityLabel("关闭提醒")
         }
-        .padding(.horizontal, DesignMetrics.space12)
-        .padding(.vertical, DesignMetrics.space8)
-        .frame(maxWidth: 360, alignment: .leading)
+        .padding(DesignMetrics.space16)
+        .frame(maxWidth: 400, alignment: .leading)
         .background(palette.surface)
-        .clipShape(.rect(cornerRadius: DesignMetrics.cornerRadius))
+        .clipShape(.rect(cornerRadius: DesignMetrics.space16))
         .overlay {
-            RoundedRectangle(cornerRadius: DesignMetrics.cornerRadius)
-                .stroke(
-                    focusedElement == nil ? accentColor : palette.accent,
+            RoundedRectangle(cornerRadius: DesignMetrics.space16)
+                .strokeBorder(
+                    focusedElement == nil ? palette.border : palette.accent,
                     lineWidth: focusedElement == nil ? 1 : 2
                 )
         }
+        .shadow(color: palette.dropdownContactShadow, radius: 1, x: 0, y: 1)
+        .shadow(color: palette.dropdownAmbientShadow, radius: 4, x: 0, y: 4)
         .contentShape(.rect)
         .focusable()
         .focused($focusedElement, equals: .banner)
@@ -82,30 +82,32 @@ struct AlertBannerView: View {
     }
 
     private var alertSummary: some View {
-        HStack(spacing: DesignMetrics.space12) {
+        HStack(alignment: .top, spacing: DesignMetrics.space12) {
             Image(
                 systemName: isRising ? "arrow.up.right.circle.fill" : "arrow.down.right.circle.fill"
             )
-            .font(DesignTypography.sectionTitle)
+            .font(DesignTypography.metric)
             .foregroundStyle(accentColor)
-            .frame(width: DesignMetrics.space24, height: DesignMetrics.space24)
+            .frame(width: 40, height: 40)
+            .background(palette.surfaceElevated, in: .circle)
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: DesignMetrics.space4) {
-                Text(isRising ? "上涨提醒" : "下跌提醒")
-                    .font(DesignTypography.bodyMedium)
-                    .foregroundStyle(palette.textPrimary)
+                HStack(alignment: .firstTextBaseline, spacing: DesignMetrics.space8) {
+                    Text(isRising ? "上涨提醒" : "下跌提醒")
+                        .font(DesignTypography.bodyMedium)
+                        .foregroundStyle(palette.textPrimary)
+                    Text(alert.triggeredAt.formatted(date: .omitted, time: .shortened))
+                        .font(DesignTypography.metadata)
+                        .monospacedDigit()
+                        .foregroundStyle(palette.textSecondary)
+                }
 
                 Text(alertDetail)
-                    .font(DesignTypography.metadata)
-                    .monospacedDigit()
-                    .foregroundStyle(accentColor)
-                    .lineLimit(2)
-
-                Text(alert.triggeredAt.formatted(date: .omitted, time: .shortened))
-                    .font(DesignTypography.metadata)
+                    .font(DesignTypography.body)
                     .monospacedDigit()
                     .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .accessibilityElement(children: .combine)

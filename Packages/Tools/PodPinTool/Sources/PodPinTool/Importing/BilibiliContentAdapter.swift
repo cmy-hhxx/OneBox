@@ -162,7 +162,7 @@ actor BilibiliContentAdapter: ContentSourceAdapter {
         do {
             return try JSONDecoder().decode(BilibiliEnvelope<Value>.self, from: result.data)
         } catch {
-            throw ContentImportError.malformedResponse
+            throw ContentImportFailure(underlying: error, presentation: .malformedResponse)
         }
     }
 

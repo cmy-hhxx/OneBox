@@ -44,7 +44,7 @@
 | 任意点击的首个视觉反馈 | P95 ≤100ms |
 | 工具首次激活 | loading 或壳层 ≤100ms，本地首个有效内容 P95 ≤500ms |
 | 三工具暖切换 | 稳定首帧 P95 ≤200ms |
-| 检查器与 PodPin 路由 | 首个变化 ≤100ms，受控帧 hitch ratio <1%，路由约 180ms 完成 |
+| 检查器与 PodPin 路由 | 首个变化 ≤100ms，受控帧 hitch ratio <1%，路由按 BoardUI 面板曲线约 300ms 完成 |
 | PodPin 热重入 | 缓存命中时首屏查询为 0，已有内容 P95 ≤100ms，无 loading 空白帧 |
 | PodPin 文件夹树 | 1,000 节点 P95 <100ms；10,000 节点 P95 <200ms |
 | 本地播放 | 点击到可听声音 P95 ≤300ms |
@@ -77,6 +77,7 @@ PR 只运行确定性功能、结构和编译检查，不在共享 runner 上设
 - README 记录产品范围和入口；架构文档记录当前结构；模块、工程和设计文档记录契约；QA 记录验证方法和缺口；ADR 记录长期决策。
 - 非 ADR 文档原地更新，不保留并行旧版或按日期增长的实现日志。实现、测试和文档在同一变更中使用同一术语。
 - 架构、权限、持久化布局或运行位置变化必须写 ADR。
-- 性能 signpost 使用统一的 `com.cmy.OneBox` subsystem，按 Host、ASCII、StockWatch 和 PodPin category 记录固定、脱敏的区间；PodPin 不恢复旧 JSONL 事件流。新增日志不得记录密钥、授权信息、用户内容、完整 URL 查询参数、用户名或绝对用户路径。
+- 性能 signpost 使用统一的 `com.cmy.OneBox` subsystem，按 Host、ASCII、StockWatch 和 PodPin category 记录固定、脱敏的区间；PodPin 不恢复旧 JSONL 事件流。
+- 应用内调试日志遵守 [ADR-0012](decisions/0012-add-opt-in-in-app-diagnostics.md)：经用户开启后，由工具在错误归一化为展示结果前上报，保留原始描述、domain/code 和最深层 underlying error；取消不记为错误。操作名不得包含用户内容。Host 入队前移除用户及临时目录路径、URL 查询与凭据、授权和敏感字段，正常模式不采集，日志不落盘或上传，仅保留最近 500 条。只持久化调试开关，不将日志正文写入偏好、数据库或系统事件流。
 
 提交格式为 `<type>(<scope>): <imperative summary>`，一次提交只表达一个可回滚意图。

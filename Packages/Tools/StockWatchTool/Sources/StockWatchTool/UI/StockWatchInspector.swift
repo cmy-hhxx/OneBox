@@ -12,7 +12,7 @@ struct StockWatchInspector: View {
     @Environment(\.designPalette) private var palette
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.space16) {
+        VStack(alignment: .leading, spacing: DesignMetrics.space24) {
             SelectedInstrumentInspectorSection(
                 store: store,
                 selectedInstrumentID: selectedInstrumentID
@@ -20,7 +20,8 @@ struct StockWatchInspector: View {
             sectionDivider
             StockWatchAlertInspectorSection(
                 store: store,
-                preferences: preferences
+                preferences: preferences,
+                selectedInstrumentID: selectedInstrumentID
             )
             sectionDivider
             StockWatchDataInspectorSection(

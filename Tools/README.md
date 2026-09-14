@@ -4,6 +4,17 @@
 versions, upstream URLs, source and prepared-output checksums, upstream
 source-release references, and shipped notices.
 
+Use `./scripts/build-release.sh` to produce the complete runnable local app at
+`dist/OneBox.app`. It generates the Xcode project, builds arm64 Release with
+coverage disabled, copies the build to a staging directory, and invokes the
+verified packaging step below. Only successful packaging and signing replace
+the previous deliverable; a failed build or package leaves that app available.
+Ordinary Xcode builds in DerivedData are development artifacts and do not
+replace this complete app. The build entry point never fetches or updates media
+tools: run `./scripts/fetch-podpin-tools.sh` explicitly when preparing the cache
+or changing the lock. Xcode may still resolve the app's pinned Swift packages
+when their build cache is first created.
+
 `scripts/fetch-podpin-tools.sh` is the sole networked step. It downloads the
 tools, source archives, and shipped notices into the ignored `Tools/cache/`,
 verifies every SHA-256, prepares the universal `yt-dlp` binary as arm64-only,

@@ -38,8 +38,8 @@ struct AddInstrumentSheet: View {
             searchControls
             searchContent
         }
-        .padding(DesignMetrics.space16)
-        .frame(width: 420, height: 430, alignment: .topLeading)
+        .padding(DesignMetrics.space24)
+        .frame(width: 440, height: 440, alignment: .topLeading)
         .background(palette.background)
         .onAppear {
             isSearchFieldFocused = true
@@ -55,7 +55,7 @@ struct AddInstrumentSheet: View {
     private var header: some View {
         HStack {
             Text("添加标的")
-                .font(DesignTypography.sectionTitle)
+                .font(DesignTypography.metric)
                 .foregroundStyle(palette.textPrimary)
 
             Spacer(minLength: 0)
@@ -64,9 +64,8 @@ struct AddInstrumentSheet: View {
                 dismiss()
             }
             .labelStyle(.iconOnly)
-            .buttonStyle(.plain)
+            .buttonStyle(ToolCloseButtonStyle())
             .keyboardShortcut(.cancelAction)
-            .frame(width: DesignMetrics.space24, height: DesignMetrics.space24)
             .accessibilityLabel("关闭添加标的")
         }
     }
@@ -74,16 +73,15 @@ struct AddInstrumentSheet: View {
     private var searchControls: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.space8) {
             HStack(spacing: DesignMetrics.space8) {
-                TextField("名称或代码", text: $searchModel.query)
-                    .textFieldStyle(.roundedBorder)
-                    .font(DesignTypography.body)
-                    .focused($isSearchFieldFocused)
-                    .onSubmit(searchModel.submit)
-                    .accessibilityLabel("搜索名称或代码")
+                ToolTextField(
+                    "名称或代码", text: $searchModel.query, focus: $isSearchFieldFocused
+                )
+                .font(DesignTypography.body)
+                .onSubmit(searchModel.submit)
+                .accessibilityLabel("搜索名称或代码")
 
                 Button("搜索", systemImage: "magnifyingglass", action: searchModel.submit)
-                    .buttonStyle(.borderedProminent)
-                    .tint(palette.accent)
+                    .buttonStyle(ToolActionButtonStyle(kind: .primary))
                     .disabled(cleanQuery.isEmpty || searchModel.isSearching)
             }
 
@@ -132,7 +130,7 @@ struct AddInstrumentSheet: View {
 
                 if searchModel.hasSearchFailure {
                     Button("重试", systemImage: "arrow.clockwise", action: searchModel.submit)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(ToolActionButtonStyle(kind: .secondary))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -189,7 +187,7 @@ struct AddInstrumentSheet: View {
             Button(isAdded ? "已添加" : "添加") {
                 add(instrument)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(ToolActionButtonStyle(kind: .secondary, compact: true))
             .disabled(isAdded || watchlistPresentation.isMutating)
             .accessibilityLabel(
                 AddInstrumentAccessibility.resultActionLabel(

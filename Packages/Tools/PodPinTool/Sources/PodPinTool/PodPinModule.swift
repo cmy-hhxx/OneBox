@@ -19,18 +19,22 @@ public enum PodPinModule {
         debugFixtureAudioURL: URL?,
         externalToolsDirectoryURL: URL?,
         applicationSupportDirectoryURL: URL? = nil,
-        allowsNetworkAccess: Bool = true
+        allowsNetworkAccess: Bool = true,
+        diagnostics: ToolDiagnostics = .disabled
     ) -> ToolRegistration {
         let session = PodPinModuleSession(
             platform: platform,
             debugFixtureAudioURL: debugFixtureAudioURL,
             externalToolsDirectoryURL: externalToolsDirectoryURL,
             applicationSupportDirectoryURL: applicationSupportDirectoryURL,
-            allowsNetworkAccess: allowsNetworkAccess
+            allowsNetworkAccess: allowsNetworkAccess,
+            diagnostics: diagnostics
         )
         return ToolRegistration(
             id: ToolID(rawValue: "podpin"),
             displayName: "PodPin",
+            systemImage: "headphones",
+            summary: "收藏、整理与收听音频",
             onApplicationTermination: {
                 await session.shutdown()
             },
@@ -47,6 +51,7 @@ final class PodPinModuleSession {
     private let debugFixtureAudioURL: URL?
     private let externalToolsDirectoryURL: URL?
     private let applicationSupportDirectoryURL: URL?
+    private let diagnostics: ToolDiagnostics
     private let allowsNetworkAccess: Bool
     private var lifecycle: PodPinToolLifecycle?
     private var shutdownTask: Task<Void, Never>?
@@ -58,13 +63,15 @@ final class PodPinModuleSession {
         debugFixtureAudioURL: URL?,
         externalToolsDirectoryURL: URL?,
         applicationSupportDirectoryURL: URL? = nil,
-        allowsNetworkAccess: Bool = true
+        allowsNetworkAccess: Bool = true,
+        diagnostics: ToolDiagnostics = .disabled
     ) {
         self.platform = platform
         self.debugFixtureAudioURL = debugFixtureAudioURL
         self.externalToolsDirectoryURL = externalToolsDirectoryURL
         self.applicationSupportDirectoryURL = applicationSupportDirectoryURL
         self.allowsNetworkAccess = allowsNetworkAccess
+        self.diagnostics = diagnostics
     }
 
     func contentLifecycle() -> PodPinToolLifecycle {
@@ -76,7 +83,8 @@ final class PodPinModuleSession {
             debugFixtureAudioURL: debugFixtureAudioURL,
             externalToolsDirectoryURL: externalToolsDirectoryURL,
             applicationSupportDirectoryURL: applicationSupportDirectoryURL,
-            allowsNetworkAccess: allowsNetworkAccess
+            allowsNetworkAccess: allowsNetworkAccess,
+            diagnostics: diagnostics
         )
         self.lifecycle = lifecycle
         return lifecycle

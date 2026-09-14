@@ -48,7 +48,7 @@ struct WatchlistJSONSheet: View {
             editor
             footer
         }
-        .padding(DesignMetrics.space16)
+        .padding(DesignMetrics.space24)
         .frame(width: 520, height: 480, alignment: .topLeading)
         .background(palette.background)
         .onAppear {
@@ -74,7 +74,7 @@ struct WatchlistJSONSheet: View {
     private var header: some View {
         HStack {
             Text("批量替换观察列表")
-                .font(DesignTypography.sectionTitle)
+                .font(DesignTypography.metric)
                 .foregroundStyle(palette.textPrimary)
 
             Spacer(minLength: 0)
@@ -83,9 +83,8 @@ struct WatchlistJSONSheet: View {
                 dismiss()
             }
             .labelStyle(.iconOnly)
-            .buttonStyle(.plain)
+            .buttonStyle(ToolCloseButtonStyle())
             .keyboardShortcut(.cancelAction)
-            .frame(width: DesignMetrics.space24, height: DesignMetrics.space24)
             .accessibilityLabel("关闭批量替换")
         }
     }
@@ -106,14 +105,14 @@ struct WatchlistJSONSheet: View {
                 jsonText = store.watchlistJSONExample()
                 resultMessage = "已填入当前列表"
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(ToolActionButtonStyle(kind: .secondary, compact: true))
 
             Button("复制当前列表", systemImage: "doc.on.doc") {
                 let value = store.watchlistJSONExample()
                 jsonText = value
                 resultMessage = copyText(value) ? "已复制当前列表" : "复制失败，请重试"
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(ToolActionButtonStyle(kind: .secondary, compact: true))
 
             Spacer(minLength: 0)
         }
@@ -122,7 +121,7 @@ struct WatchlistJSONSheet: View {
 
     private var editor: some View {
         TextEditor(text: $jsonText)
-            .font(DesignTypography.body)
+            .font(DesignTypography.diagnostic)
             .foregroundStyle(palette.textPrimary)
             .scrollContentBackground(.hidden)
             .padding(DesignMetrics.space8)
@@ -154,8 +153,7 @@ struct WatchlistJSONSheet: View {
             Button("替换列表", systemImage: "arrow.triangle.2.circlepath") {
                 isConfirmingReplacement = true
             }
-            .buttonStyle(.borderedProminent)
-            .tint(palette.accent)
+            .buttonStyle(ToolActionButtonStyle(kind: .primary))
             .disabled(!canImport || isImporting || watchlistPresentation.isMutating)
             .keyboardShortcut(.defaultAction)
         }

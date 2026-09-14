@@ -1,6 +1,8 @@
 import Foundation
+import OneBoxRuntime
 
 actor PublicMarketDataClient: MarketDataClient {
+    private let diagnostics: ToolDiagnostics
     private let session: URLSession
     private let redirectDelegate = RedirectRejectingDelegate()
     private let decoder = JSONDecoder()
@@ -10,8 +12,10 @@ actor PublicMarketDataClient: MarketDataClient {
 
     init(
         session: URLSession? = nil,
-        identifierStore: EastMoneyIdentifierStore? = nil
+        identifierStore: EastMoneyIdentifierStore? = nil,
+        diagnostics: ToolDiagnostics = .disabled
     ) {
+        self.diagnostics = diagnostics
         self.identifierStore =
             identifierStore
             ?? EastMoneyIdentifierStore(defaults: session == nil ? .standard : nil)
@@ -82,6 +86,7 @@ actor PublicMarketDataClient: MarketDataClient {
             return candidate
         } catch {
             try Task.checkCancellation()
+            diagnostics.record(error, operation: "quote.tencent")
         }
 
         let candidate = try await fetchEastMoneyQuote(for: instrument)
@@ -284,7 +289,14 @@ actor PublicMarketDataClient: MarketDataClient {
         )
         guard let http = response as? HTTPURLResponse,
             (200..<300).contains(http.statusCode)
-        else { throw MarketDataError.invalidResponse }
+        else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            throw NSError(
+                domain: "StockWatch.HTTP", code: status,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "HTTP \(status) \(url.host ?? "")\(url.path)"
+                ])
+        }
         return data
     }
 }

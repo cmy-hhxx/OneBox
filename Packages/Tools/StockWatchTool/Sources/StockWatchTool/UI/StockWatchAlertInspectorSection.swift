@@ -11,6 +11,7 @@ enum AlertThresholdPresentation {
 struct StockWatchAlertInspectorSection: View {
     let store: MonitorStore
     @Bindable var preferences: StockWatchPreferences
+    let selectedInstrumentID: InstrumentID?
 
     private let watchlistPresentation: WatchlistPresentationSession
     private let alertPresentation: AlertPresentationSession
@@ -21,9 +22,12 @@ struct StockWatchAlertInspectorSection: View {
     @State private var targetGenerationRequest = 0
     @State private var thresholdPresentation: AlertThresholdPresentationSession
 
-    init(store: MonitorStore, preferences: StockWatchPreferences) {
+    init(
+        store: MonitorStore, preferences: StockWatchPreferences, selectedInstrumentID: InstrumentID?
+    ) {
         self.store = store
         self.preferences = preferences
+        self.selectedInstrumentID = selectedInstrumentID
         self.watchlistPresentation = store.watchlistPresentation
         self.alertPresentation = store.alertPresentation
         _thresholdPresentation = State(
@@ -34,70 +38,49 @@ struct StockWatchAlertInspectorSection: View {
     }
 
     var body: some View {
-        @Bindable var thresholdPresentation = thresholdPresentation
-
         VStack(alignment: .leading, spacing: DesignMetrics.space12) {
-            Text("价格提醒")
-                .font(DesignTypography.sectionTitle)
-                .accessibilityAddTraits(.isHeader)
-
-            Toggle("启用价格提醒", isOn: alertConfigurationBinding(\.isEnabled))
-                .toggleStyle(.switch)
-
-            Picker("提醒依据", selection: alertConfigurationBinding(\.basis)) {
-                ForEach(AlertBasis.allCases) { basis in
-                    Text(basis.displayName).tag(basis)
-                }
+            HStack {
+                Text("价格提醒")
+                    .font(DesignTypography.sectionTitle)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: DesignMetrics.space8)
+                Toggle("启用价格提醒", isOn: alertConfigurationBinding(\.isEnabled))
+                    .labelsHidden()
+                    .toggleStyle(ToolSwitchStyle(showsLabel: false))
+                    .controlSize(.small)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .accessibilityLabel("提醒依据")
 
-            VStack(alignment: .leading, spacing: DesignMetrics.space12) {
-                thresholdControl(
-                    title: alertPresentation.configuration.basis == .percentage
-                        ? "上涨超过"
-                        : "目标上涨幅度",
-                    systemImage: "arrow.up.right",
-                    value: $thresholdPresentation.risingThreshold,
-                    field: .rising
-                )
-                thresholdControl(
-                    title: alertPresentation.configuration.basis == .percentage
-                        ? "下跌超过"
-                        : "目标下跌幅度",
-                    systemImage: "arrow.down.right",
-                    value: $thresholdPresentation.fallingThreshold,
-                    field: .falling
-                )
-            }
+            ToolSegmentedPicker(
+                "提醒依据",
+                selection: alertConfigurationBinding(\.basis),
+                options: AlertBasis.allCases.map { ToolSegment($0.displayName, value: $0) }
+            )
             .disabled(!alertPresentation.configuration.isEnabled)
 
-            Button(action: requestTargetGeneration) {
-                if isGeneratingTargets {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Label("按现价生成目标", systemImage: "scope")
-                }
-            }
-            .buttonStyle(.bordered)
-            .disabled(
-                isGeneratingTargets
-                    || !alertPresentation.configuration.isEnabled
-                    || watchlistPresentation.instruments.isEmpty
-            )
+            if alertPresentation.configuration.basis == .targetPrice {
+                SelectedInstrumentTargetControls(
+                    store: store, selectedInstrumentID: selectedInstrumentID
+                )
+                .disabled(!alertPresentation.configuration.isEnabled)
 
-            if let targetGenerationMessage {
-                Text(targetGenerationMessage)
-                    .font(DesignTypography.metadata)
-                    .foregroundStyle(
-                        targetGenerationMessage.hasPrefix("已")
-                            ? palette.textSecondary
-                            : palette.negative
-                    )
-                    .fixedSize(horizontal: false, vertical: true)
+                DisclosureGroup("按涨跌幅生成目标") {
+                    VStack(alignment: .leading, spacing: DesignMetrics.space12) {
+                        Text("为全部标的按实时价格批量设置目标。")
+                            .font(DesignTypography.metadata)
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        thresholds
+                        targetGeneration
+                    }
+                    .padding(.top, DesignMetrics.space8)
+                }
+                .font(DesignTypography.metadata)
+            } else {
+                thresholds
             }
+
+            Divider()
+                .padding(.vertical, DesignMetrics.space4)
 
             soundControl(
                 title: "上涨提示音",
@@ -119,6 +102,59 @@ struct StockWatchAlertInspectorSection: View {
         }
     }
 
+    private var thresholds: some View {
+        @Bindable var thresholdPresentation = thresholdPresentation
+        return VStack(alignment: .leading, spacing: DesignMetrics.space12) {
+            thresholdControl(
+                title: alertPresentation.configuration.basis == .percentage
+                    ? "上涨超过"
+                    : "目标上涨幅度",
+                systemImage: "arrow.up.right",
+                value: $thresholdPresentation.risingThreshold,
+                field: .rising
+            )
+            thresholdControl(
+                title: alertPresentation.configuration.basis == .percentage
+                    ? "下跌超过"
+                    : "目标下跌幅度",
+                systemImage: "arrow.down.right",
+                value: $thresholdPresentation.fallingThreshold,
+                field: .falling
+            )
+        }
+        .disabled(!alertPresentation.configuration.isEnabled)
+    }
+
+    private var targetGeneration: some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.space8) {
+            Button(action: requestTargetGeneration) {
+                if isGeneratingTargets {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Label("按现价生成目标", systemImage: "scope")
+                }
+            }
+            .buttonStyle(ToolActionButtonStyle(kind: .secondary, compact: true))
+            .disabled(
+                isGeneratingTargets
+                    || !alertPresentation.configuration.isEnabled
+                    || watchlistPresentation.instruments.isEmpty
+            )
+
+            if let targetGenerationMessage {
+                Text(targetGenerationMessage)
+                    .font(DesignTypography.metadata)
+                    .foregroundStyle(
+                        targetGenerationMessage.hasPrefix("已")
+                            ? palette.textSecondary
+                            : palette.negative
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
     private func thresholdControl(
         title: String,
         systemImage: String,
@@ -128,7 +164,7 @@ struct StockWatchAlertInspectorSection: View {
         VStack(alignment: .leading, spacing: DesignMetrics.space4) {
             HStack(spacing: DesignMetrics.space8) {
                 Label(title, systemImage: systemImage)
-                    .font(DesignTypography.metadata)
+                    .font(DesignTypography.body)
                 Spacer(minLength: 0)
                 Text(AlertThresholdPresentation.valueText(value.wrappedValue))
                     .font(DesignTypography.metadata)
@@ -136,7 +172,8 @@ struct StockWatchAlertInspectorSection: View {
                     .foregroundStyle(palette.textSecondary)
             }
 
-            Slider(
+            ToolSlider(
+                LocalizedStringKey(title),
                 value: value,
                 in: 0.5...15,
                 step: 0.5,
@@ -150,8 +187,6 @@ struct StockWatchAlertInspectorSection: View {
                     }
                 }
             )
-            .tint(palette.accent)
-            .controlSize(.small)
             .accessibilityLabel(title)
             .accessibilityValue(AlertThresholdPresentation.valueText(value.wrappedValue))
         }
@@ -164,16 +199,16 @@ struct StockWatchAlertInspectorSection: View {
     ) -> some View {
         HStack(spacing: DesignMetrics.space8) {
             Toggle(title, isOn: isOn)
-                .toggleStyle(.switch)
+                .toggleStyle(ToolCheckboxStyle())
+                .font(DesignTypography.metadata)
 
-            Spacer(minLength: 0)
+            Spacer(minLength: DesignMetrics.space8)
 
             Button("预览 \(title)", systemImage: "speaker.wave.2") {
                 store.testAlert(direction)
             }
             .labelStyle(.iconOnly)
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .buttonStyle(ToolIconButtonStyle())
             .help("预览 \(title)")
             .accessibilityLabel("预览 \(title)")
         }

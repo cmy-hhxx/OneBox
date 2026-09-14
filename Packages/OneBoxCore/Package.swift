@@ -21,6 +21,7 @@ let package = Package(
         .target(name: "OneBoxRuntime"),
         .target(
             name: "OneBoxDesignSystem",
+            resources: [.process("Resources")],
             swiftSettings: [.defaultIsolation(MainActor.self)]
         ),
         .target(
@@ -35,6 +36,10 @@ let package = Package(
         .testTarget(
             name: "OneBoxDesignSystemTests",
             dependencies: ["OneBoxDesignSystem"]
+        ),
+        .testTarget(
+            name: "OneBoxHostTests",
+            dependencies: ["OneBoxHost", "OneBoxRuntime"]
         ),
     ],
     swiftLanguageModes: [.v6]

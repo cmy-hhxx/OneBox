@@ -56,9 +56,9 @@ struct StockWatchToolbar: View {
     var body: some View {
         HStack(spacing: DesignMetrics.space8) {
             Button("添加标的", systemImage: "plus", action: addInstrument)
-                .buttonStyle(.borderedProminent)
-                .tint(palette.accent)
+                .buttonStyle(ToolActionButtonStyle(kind: .primary))
                 .accessibilityInputLabels(["添加标的", "搜索标的"])
+                .fixedSize()
 
             Menu {
                 Button(
@@ -67,12 +67,15 @@ struct StockWatchToolbar: View {
                     action: replaceWatchlistFromJSON
                 )
             } label: {
-                Image(systemName: "ellipsis")
-                    .frame(width: DesignMetrics.space16, height: DesignMetrics.space16)
+                Label("列表", systemImage: "ellipsis")
+                    .padding(.horizontal, DesignMetrics.space8)
+                    .frame(height: DesignMetrics.titlebarControlSize)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .frame(width: DesignMetrics.titlebarControlSize)
+            .foregroundStyle(palette.textSecondary)
+            .tint(palette.textPrimary)
+            .fixedSize()
             .help("更多观察列表操作")
             .accessibilityLabel("更多观察列表操作")
 
@@ -82,9 +85,7 @@ struct StockWatchToolbar: View {
 
             Button("立即刷新", systemImage: "arrow.clockwise", action: refresh)
                 .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .frame(width: DesignMetrics.titlebarControlSize)
-                .foregroundStyle(palette.textPrimary)
+                .buttonStyle(ToolIconButtonStyle())
                 .disabled(isRefreshing)
                 .help(isRefreshing ? "正在刷新" : "立即刷新")
                 .accessibilityLabel(isRefreshing ? "正在刷新行情" : "立即刷新行情")
@@ -95,10 +96,8 @@ struct StockWatchToolbar: View {
                 action: toggleInspector
             )
             .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
-            .frame(width: DesignMetrics.titlebarControlSize)
-            .foregroundStyle(palette.textPrimary)
-            .help(isInspectorPresented ? "关闭检查器" : "显示检查器")
+            .buttonStyle(ToolIconButtonStyle(isSelected: isInspectorPresented))
+            .help(isInspectorPresented ? "关闭标的与提醒" : "显示标的与提醒")
             .accessibilityValue(isInspectorPresented ? "已打开" : "已关闭")
             .accessibilityInputLabels(["检查器", "显示检查器", "关闭检查器"])
             .focused(inspectorKeyboardFocus)
@@ -119,26 +118,28 @@ struct StockWatchToolbar: View {
             sourceError: quotePresentation.snapshot.sourceError,
             storageError: diagnosticsPresentation.storageError
         ) {
-            Label(status.accessibilityLabel, systemImage: status.icon)
-                .font(DesignTypography.metadata)
+            Image(systemName: status.icon)
+                .font(DesignTypography.bodyMedium)
                 .foregroundStyle(statusColor(status))
-                .lineLimit(1)
-                .help(status.message)
+                .frame(width: DesignMetrics.space24, height: DesignMetrics.space24)
+                .help("\(status.accessibilityLabel)：\(status.message)")
+                .accessibilityLabel(status.accessibilityLabel)
+                .accessibilityValue(status.message)
         } else if isRefreshing {
-            HStack(spacing: DesignMetrics.space4) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("正在刷新")
-                    .font(DesignTypography.metadata)
-                    .foregroundStyle(palette.textSecondary)
-            }
-            .accessibilityElement(children: .combine)
+            ProgressView()
+                .controlSize(.small)
+                .frame(width: DesignMetrics.space24)
+                .accessibilityLabel("正在刷新行情")
         } else if let lastRefresh = quotePresentation.snapshot.lastRefresh {
-            Label {
-                Text(lastRefresh, style: .relative)
-                    .monospacedDigit()
-            } icon: {
+            ViewThatFits(in: .horizontal) {
+                Label {
+                    Text(lastRefresh, format: .dateTime.hour().minute().second())
+                        .monospacedDigit()
+                } icon: {
+                    Image(systemName: "checkmark.circle")
+                }
                 Image(systemName: "checkmark.circle")
+                    .frame(width: DesignMetrics.space24)
             }
             .font(DesignTypography.metadata)
             .foregroundStyle(palette.textSecondary)
@@ -147,7 +148,9 @@ struct StockWatchToolbar: View {
             .accessibilityLabel("最近刷新")
             .accessibilityValue(StockWatchToolbarAccessibility.lastRefreshValue(lastRefresh))
         } else {
-            Label("尚未刷新", systemImage: "clock")
+            Image(systemName: "clock")
+                .accessibilityLabel("尚未刷新")
+                .help("尚未刷新")
                 .font(DesignTypography.metadata)
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(1)

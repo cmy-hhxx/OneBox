@@ -61,13 +61,12 @@ struct IntradayChartView: View {
     var body: some View {
         let plottedPoints = chart.points
         let closes = chart.closes
-        let segmentRoles = chart.segmentRoles
         let reviewMarkers = chart.reviewMarkers
 
         Canvas { context, size in
-            guard plottedPoints.count > 1 else { return }
+            guard !plottedPoints.isEmpty else { return }
 
-            let range = max(chart.high - chart.low, 0.0001)
+            let range = max(chart.high - chart.low, Double.ulpOfOne)
             let isCompact = size.height < 52
             let markerInsets = ReviewMarkerLayout.plotInsets(
                 hasMarkers: reviewMarkers != nil,
@@ -95,47 +94,36 @@ struct IntradayChartView: View {
                 style: StrokeStyle(lineWidth: 1, dash: [2, 4])
             )
 
-            if let first = plottedPoints.first,
-                let firstRole = segmentRoles.first
-            {
-                var segmentPath = Path()
-                var activeRole = firstRole
-                segmentPath.move(to: coordinate(progress: first.progress, price: first.close))
-
-                for index in segmentRoles.indices {
-                    let role = segmentRoles[index]
-                    let start = plottedPoints[index]
-                    if role != activeRole {
-                        stroke(
-                            segmentPath,
-                            role: activeRole,
-                            context: context,
-                            lineWidth: isCompact ? 1.25 : 1.5
-                        )
-                        segmentPath = Path()
-                        segmentPath.move(
-                            to: coordinate(progress: start.progress, price: start.close)
-                        )
-                        activeRole = role
-                    }
-
-                    let end = plottedPoints[index + 1]
-                    segmentPath.addLine(
-                        to: coordinate(progress: end.progress, price: end.close)
-                    )
+            if let first = plottedPoints.first, let last = plottedPoints.last {
+                var pricePath = Path()
+                pricePath.move(to: coordinate(progress: first.progress, price: first.close))
+                for point in plottedPoints.dropFirst() {
+                    pricePath.addLine(to: coordinate(progress: point.progress, price: point.close))
                 }
-
-                stroke(
-                    segmentPath,
-                    role: activeRole,
-                    context: context,
-                    lineWidth: isCompact ? 1.25 : 1.5
-                )
+                var area = pricePath
+                area.addLine(
+                    to: CGPoint(
+                        x: coordinate(progress: last.progress, price: last.close).x,
+                        y: size.height - markerInsets.vertical))
+                area.addLine(
+                    to: CGPoint(
+                        x: coordinate(progress: first.progress, price: first.close).x,
+                        y: size.height - markerInsets.vertical))
+                area.closeSubpath()
+                context.fill(
+                    area,
+                    with: .linearGradient(
+                        Gradient(colors: [
+                            palette.accent.opacity(0.18), palette.accent.opacity(0.015),
+                        ]),
+                        startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
+                context.stroke(
+                    pricePath, with: .color(palette.accent),
+                    style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
             }
 
             if let last = plottedPoints.last {
                 let point = coordinate(progress: last.progress, price: last.close)
-                let terminalRole = segmentRoles.last ?? chart.fallbackColorRole
                 context.fill(
                     Path(
                         ellipseIn: CGRect(
@@ -156,7 +144,7 @@ struct IntradayChartView: View {
                             height: 2.5
                         )
                     ),
-                    with: .color(terminalRole.color(in: palette))
+                    with: .color(palette.accent)
                 )
             }
 
@@ -191,28 +179,14 @@ struct IntradayChartView: View {
                 }
             }
         }
-        .accessibilityLabel(tr("当日分时曲线"))
+        .accessibilityLabel(tr("分时曲线"))
         .accessibilityValue(
             reviewMarkers != nil ? reviewMarkersExplanation(for: reviewMarkers) : ""
         )
         .help(
             reviewMarkers != nil
                 ? reviewMarkersExplanation(for: reviewMarkers)
-                : tr("当日分时曲线")
-        )
-    }
-
-    private func stroke(
-        _ path: Path,
-        role: MarketColorRole,
-        context: GraphicsContext,
-        lineWidth: CGFloat
-    ) {
-        guard !path.isEmpty else { return }
-        context.stroke(
-            path,
-            with: .color(role.color(in: palette)),
-            style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
+                : tr("分时曲线")
         )
     }
 
@@ -242,6 +216,12 @@ struct IntradayChartView: View {
             ),
             with: .color(color)
         )
+        context.fill(
+            Path(
+                roundedRect: CGRect(
+                    x: layout.labelPoint.x - 5, y: layout.labelPoint.y - 6,
+                    width: 10, height: 12), cornerRadius: 2),
+            with: .color(palette.surface.opacity(0.94)))
         context.draw(
             Text(label)
                 .font(DesignTypography.metadata)

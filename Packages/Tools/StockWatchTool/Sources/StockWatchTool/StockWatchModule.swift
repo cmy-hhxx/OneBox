@@ -9,14 +9,16 @@ public enum StockWatchModule {
         platform: any StockWatchPlatformClient,
         applicationSupportDirectoryURL: URL? = nil,
         preferences: UserDefaults? = nil,
-        allowsNetworkAccess: Bool = true
+        allowsNetworkAccess: Bool = true,
+        diagnostics: ToolDiagnostics = .disabled
     ) -> ToolRegistration {
         makeRegistration(
             platform: platform,
             session: StockWatchModuleSession(
                 applicationSupportDirectoryURL: applicationSupportDirectoryURL,
                 preferences: preferences,
-                allowsNetworkAccess: allowsNetworkAccess
+                allowsNetworkAccess: allowsNetworkAccess,
+                diagnostics: diagnostics
             )
         )
     }
@@ -28,6 +30,8 @@ public enum StockWatchModule {
         ToolRegistration(
             id: id,
             displayName: "股票看盘",
+            systemImage: "chart.xyaxis.line",
+            summary: "自选行情与价格提醒",
             onApplicationTermination: {
                 await session.prepareForApplicationTermination()
             },
@@ -47,6 +51,7 @@ final class StockWatchModuleSession {
     let lifecycleCoordinator = StockWatchLifecycleCoordinator()
     private let applicationSupportDirectoryURL: URL?
     private let preferences: UserDefaults?
+    private let diagnostics: ToolDiagnostics
     private let allowsNetworkAccess: Bool
 
     private var visibleRuns: [UUID: Task<Void, Never>] = [:]
@@ -55,11 +60,13 @@ final class StockWatchModuleSession {
     init(
         applicationSupportDirectoryURL: URL? = nil,
         preferences: UserDefaults? = nil,
-        allowsNetworkAccess: Bool = true
+        allowsNetworkAccess: Bool = true,
+        diagnostics: ToolDiagnostics = .disabled
     ) {
         self.applicationSupportDirectoryURL = applicationSupportDirectoryURL
         self.preferences = preferences
         self.allowsNetworkAccess = allowsNetworkAccess
+        self.diagnostics = diagnostics
     }
 
     func makeBootstrap(
@@ -68,13 +75,15 @@ final class StockWatchModuleSession {
         let storage: StockWatchStorage
         if let applicationSupportDirectoryURL {
             storage = StockWatchStorage(
-                applicationSupportDirectory: applicationSupportDirectoryURL
+                applicationSupportDirectory: applicationSupportDirectoryURL,
+                diagnostics: diagnostics
             )
         } else {
-            storage = StockWatchStorage()
+            storage = StockWatchStorage(diagnostics: diagnostics)
         }
         let client: any MarketDataClient =
-            allowsNetworkAccess ? PublicMarketDataClient() : OfflineMarketDataClient()
+            allowsNetworkAccess
+            ? PublicMarketDataClient(diagnostics: diagnostics) : OfflineMarketDataClient()
 
         return StockWatchBootstrap(
             platform: platform,
@@ -87,7 +96,8 @@ final class StockWatchModuleSession {
                 )
             },
             client: client,
-            storage: storage
+            storage: storage,
+            diagnostics: diagnostics
         )
     }
 

@@ -1,11 +1,38 @@
 import Foundation
 import GRDB
+import OneBoxRuntime
 import XCTest
+import os
 
 @testable import StockWatchTool
 
 @MainActor
 final class StockWatchBootstrapTests: XCTestCase {
+    func testStartupReportsOriginalDatabaseErrorBeforeSafePresentation() async {
+        let events = OSAllocatedUnfairLock<[DiagnosticEvent]>(initialState: [])
+        let bootstrap = StockWatchBootstrap(
+            preferencesFactory: { self.makePreferences() },
+            databasePath: "/tmp/stock-diagnostic.sqlite",
+            databaseFactory: {
+                throw NSError(
+                    domain: "SQLiteFixture", code: 26,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "file is not a database"
+                    ])
+            },
+            diagnostics: ToolDiagnostics { event in events.withLock { $0.append(event) } }
+        )
+
+        await bootstrap.start()
+
+        let recorded = events.withLock { $0 }
+        XCTAssertEqual(recorded.count, 1)
+        XCTAssertEqual(recorded.first?.operation, "storage.open")
+        XCTAssertTrue(recorded.first?.message.contains("SQLiteFixture (26)") == true)
+        XCTAssertTrue(recorded.first?.message.contains("file is not a database") == true)
+        XCTAssertFalse(bootstrap.failure?.message.contains("SQLiteFixture") == true)
+    }
+
     func testCancelledLifecycleWaiterReturnsWithoutTakingTheNextLease() async throws {
         let coordinator = StockWatchLifecycleCoordinator()
         let acquiredFirstLease = await coordinator.acquire()

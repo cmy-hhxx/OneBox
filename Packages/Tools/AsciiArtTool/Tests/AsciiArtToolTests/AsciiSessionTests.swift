@@ -1,4 +1,6 @@
 import Foundation
+import OneBoxRuntime
+import Synchronization
 import Testing
 
 @testable import AsciiArtTool
@@ -6,6 +8,27 @@ import Testing
 @MainActor
 @Suite("ASCII session lifecycle")
 struct AsciiSessionTests {
+    @Test
+    func `file import reports the original file error to diagnostics`() async throws {
+        let events = AsciiDiagnosticEvents()
+        let session = AsciiSession(
+            diagnostics: ToolDiagnostics { event in
+                events.values.withLock { $0.append(event) }
+            })
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString).appendingPathExtension("png")
+        session.importImage(from: missing)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while session.isImporting, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(session.statusError == .decodeFailed)
+        let captured = events.values.withLock { $0 }
+        #expect(captured.count == 1)
+        #expect(captured.first?.message.contains("NSPOSIXErrorDomain (2)") == true)
+        await session.shutdown()
+    }
+
     @Test
     func `new session stays static until the user selects an animation`() {
         let session = AsciiSession()
@@ -176,4 +199,8 @@ struct AsciiSessionTests {
             try? await Task.sleep(for: .milliseconds(5))
         }
     }
+}
+
+private final class AsciiDiagnosticEvents: Sendable {
+    let values = Mutex<[DiagnosticEvent]>([])
 }

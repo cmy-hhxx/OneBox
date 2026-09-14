@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import OSLog
+import OneBoxRuntime
 
 enum LibraryStartupPhase: Equatable {
     case loading
@@ -129,6 +130,7 @@ final class PodPinStore: ObservableObject {
     var currentDuration: TimeInterval { playbackPresentation.snapshot.duration }
     var playbackPhase: PlaybackPhase { currentPlaybackPhase }
 
+    private let diagnostics: ToolDiagnostics
     private let databaseFactory: @Sendable () throws -> MarketDatabase
     private let mediaStoreFactory: @Sendable () throws -> PodPinMediaStore
     private let importer: any ContentImporting
@@ -190,9 +192,11 @@ final class PodPinStore: ObservableObject {
         artworkDownloader: any ArtworkCaching = ArtworkDownloader(),
         browserAccessAuthorizer: any BrowserAccessAuthorizing = BrowserAccessBroker(),
         playbackController: AudioPlaybackController = AudioPlaybackController(),
-        nowPlayingController: NowPlayingController = NowPlayingController()
+        nowPlayingController: NowPlayingController = NowPlayingController(),
+        diagnostics: ToolDiagnostics = .disabled
     ) {
         self.preferences = preferences
+        self.diagnostics = diagnostics
         self.databaseFactory = databaseFactory
         self.mediaStoreFactory = mediaStoreFactory
         self.resolvedStreamCache = resolvedStreamCache
@@ -385,6 +389,7 @@ final class PodPinStore: ObservableObject {
             }
             database = nil
             mediaStore = nil
+            diagnostics.record(error, operation: "library.open")
             startupError = error.localizedDescription
             startupPhase = .failed(error.localizedDescription)
             didResolveFirstContent = true
@@ -497,6 +502,7 @@ final class PodPinStore: ObservableObject {
                     listeningHistory: listeningHistory
                 )
             } catch {
+                diagnostics.record(error, operation: "shutdown.position.flush.failed")
                 await AppDiagnostics.shared.record(
                     level: .warning,
                     category: "playback",
@@ -541,6 +547,7 @@ final class PodPinStore: ObservableObject {
             return itemIDs
         } catch {
             guard !isCancellation(error) else { return [] }
+            diagnostics.record(error, operation: "interrupted-download.recovery.failed")
             await AppDiagnostics.shared.record(
                 level: .warning,
                 category: "database",
@@ -566,6 +573,8 @@ final class PodPinStore: ObservableObject {
                     )
                     applyItemChange(restored)
                 } catch {
+                    diagnostics.record(
+                        error, operation: "interrupted-download.marker-restore.failed")
                     await AppDiagnostics.shared.record(
                         level: .warning,
                         category: "database",
@@ -573,6 +582,7 @@ final class PodPinStore: ObservableObject {
                         error: PresentedError.from(error)
                     )
                 }
+                diagnostics.record(error, operation: "interrupted-download.cleanup.failed")
                 await AppDiagnostics.shared.record(
                     level: .warning,
                     category: "storage",
@@ -601,6 +611,7 @@ final class PodPinStore: ObservableObject {
             replaceCurrentItemIfNeeded(try await database.item(id: currentItem.id))
         } catch {
             guard !isCancellation(error) else { return }
+            diagnostics.record(error, operation: "current-item.media-repair.failed")
             await AppDiagnostics.shared.record(
                 level: .warning,
                 category: "storage",
@@ -621,6 +632,7 @@ final class PodPinStore: ObservableObject {
             try await playbackQueue.remove(currentItem.id)
         } catch {
             guard !isCancellation(error) else { return }
+            diagnostics.record(error, operation: "current-item.queue-repair.failed")
             await AppDiagnostics.shared.record(
                 level: .warning,
                 category: "playback",
@@ -952,10 +964,12 @@ final class PodPinStore: ObservableObject {
                 requireVerification(request, toRetry: .probe(url))
                 return nil
             }
+            diagnostics.record(error, operation: "import.probe")
             importIssue = PresentedError.from(error)
             return nil
         } catch {
             guard !isCancellation(error) else { return nil }
+            diagnostics.record(error, operation: "import.probe")
             importIssue = PresentedError.from(error)
             return nil
         }
@@ -1325,6 +1339,7 @@ final class PodPinStore: ObservableObject {
             do {
                 try await playbackQueue.remove(itemID)
             } catch {
+                diagnostics.record(error, operation: "queue.persist")
                 playbackQueue.retainFailedHead(message: error.localizedDescription)
             }
         }
@@ -1352,6 +1367,7 @@ final class PodPinStore: ObservableObject {
             do {
                 try await playbackQueue.clear()
             } catch {
+                diagnostics.record(error, operation: "queue.persist")
                 playbackQueue.retainFailedHead(message: error.localizedDescription)
             }
         }
@@ -1413,6 +1429,7 @@ final class PodPinStore: ObservableObject {
             synchronizePlaybackPresentation()
         } catch {
             playbackQueue.retainFailedHead(message: "播放已切换，但队列状态未能更新。")
+            diagnostics.record(error, operation: "queue.consume-after-ready.failed")
             await AppDiagnostics.shared.record(
                 level: .warning,
                 category: "playback",
@@ -1457,6 +1474,7 @@ final class PodPinStore: ObservableObject {
             do {
                 storedItem = try await database.item(id: itemID)
             } catch {
+                diagnostics.record(error, operation: "recovery.lookup.failed")
                 await AppDiagnostics.shared.record(
                     level: .warning, category: "playback", event: "recovery.lookup.failed",
                     error: PresentedError.from(error))
@@ -1471,7 +1489,7 @@ final class PodPinStore: ObservableObject {
             var refreshedItem = storedItem,
             refreshedItem.storageKind == .online
         else {
-            present(ContentImportError.mediaUnavailable(message))
+            present(ContentImportError.mediaUnavailable(message), reportsDiagnostics: false)
             return
         }
         playbackRecoveryAttempts.insert(itemID)
@@ -1480,6 +1498,7 @@ final class PodPinStore: ObservableObject {
             _ = try await database.updatePlaybackPosition(
                 for: itemID, position: refreshedItem.playbackPosition)
         } catch {
+            diagnostics.record(error, operation: "recovery.position.persist.failed")
             await AppDiagnostics.shared.record(
                 level: .warning, category: "playback", event: "recovery.position.persist.failed",
                 error: PresentedError.from(error))
@@ -1639,6 +1658,7 @@ final class PodPinStore: ObservableObject {
                 try await performDownload(item, attempt: attempt)
             } catch {
                 if isCancellation(error) { return }
+                diagnostics.record(error, operation: "download")
                 failedCount += 1
             }
         }
@@ -1662,6 +1682,7 @@ final class PodPinStore: ObservableObject {
 
         if item.downloadState == .available {
             do { try await mediaStore.removeDownloadedAudio(for: item.id) } catch {
+                diagnostics.record(error, operation: "download.stale-media.cleanup.failed")
                 await AppDiagnostics.shared.record(
                     level: .warning, category: "storage",
                     event: "download.stale-media.cleanup.failed", error: PresentedError.from(error))
@@ -1726,6 +1747,7 @@ final class PodPinStore: ObservableObject {
         } catch {
             if markedDownloading {
                 do { try await mediaStore.removeDownloadedAudio(for: item.id) } catch {
+                    diagnostics.record(error, operation: "download.failed-media.cleanup.failed")
                     await AppDiagnostics.shared.record(
                         level: .warning, category: "storage",
                         event: "download.failed-media.cleanup.failed",
@@ -1736,6 +1758,7 @@ final class PodPinStore: ObservableObject {
                     let updated = try await database.updateDownloadState(for: item.id, state: state)
                     applyItemChange(updated)
                 } catch {
+                    diagnostics.record(error, operation: "download.failure-state.persist.failed")
                     await AppDiagnostics.shared.record(
                         level: .warning, category: "database",
                         event: "download.failure-state.persist.failed",
@@ -1798,6 +1821,7 @@ final class PodPinStore: ObservableObject {
             try? await playbackQueue.reload()
             if let mediaStore {
                 do { try await mediaStore.removeMedia(for: item.id) } catch {
+                    diagnostics.record(error, operation: "item.delete-media.cleanup.failed")
                     await AppDiagnostics.shared.record(
                         level: .warning, category: "storage",
                         event: "item.delete-media.cleanup.failed", error: PresentedError.from(error)
@@ -1864,6 +1888,7 @@ final class PodPinStore: ObservableObject {
             try await refreshItemsOrThrow(for: request)
         } catch {
             if isCurrentItemRefreshRequest(request) {
+                diagnostics.record(error, operation: "library.refresh")
                 let presented = PresentedError.from(error)
                 if preservingVisibleContent {
                     userFacingError = presented
@@ -2098,6 +2123,7 @@ final class PodPinStore: ObservableObject {
                 applyItemChange(updatedItem)
             }
         } catch {
+            if !isCancellation(error) { diagnostics.record(error, operation: "artwork.cache") }
             // Artwork is auxiliary source metadata. The audio item remains useful
             // without it, so failure intentionally stays non-blocking. If deletion
             // won the race, remove any directory recreated by the late response.
@@ -2129,7 +2155,11 @@ final class PodPinStore: ObservableObject {
                     listeningHistory: listeningHistory
                 )
             } catch {
-                if force { self?.present(error) }
+                if force {
+                    self?.present(error)
+                } else {
+                    self?.diagnostics.record(error, operation: "playback.persist-position")
+                }
             }
         }
     }
@@ -2443,9 +2473,11 @@ final class PodPinStore: ObservableObject {
     }
 
     private func present(
-        _ error: Error, category: String = "app", event: String = "operation.failed"
+        _ error: Error, category: String = "app", event: String = "operation.failed",
+        reportsDiagnostics: Bool = true
     ) {
         guard !isShutDown, !isCancellation(error) else { return }
+        if reportsDiagnostics { diagnostics.record(error, operation: "\(category).\(event)") }
         let presented = PresentedError.from(error)
         userFacingError = presented
         launchOwnedTask {
